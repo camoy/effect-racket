@@ -18,7 +18,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; state
 
-(struct state (default))
+(struct state ())
 
 (define (bad) (error "invalid reference"))
 (define-effect (get r) (bad))
@@ -26,10 +26,11 @@
 
 (define-syntax (let-ref stx)
   (syntax-parse stx
-    [(_ ([?r:expr ?e:expr] ...) ?b:expr)
-     #'(let ([?r (gensym)] ...)
+    [(_ ([?r:expr ?e:expr] ...) ?b:expr ...)
+     #'(let ([?r (state)] ...)
          (define comp
-           (handle (let ([result ?b]) (λ (store) result))
+           (handle (let ([result (begin ?b ...)])
+                     (λ (store) result))
              [(get r)
               (λ (store)
                 (unless (hash-has-key? store r) (bad))
@@ -57,6 +58,6 @@
      (get r))
    10
 
-;   #:x (get (let-ref ([r 42]) r))
-;   "invalid reference"
+   #:x (get (let-ref ([r 42]) r))
+   "invalid reference"
    ))

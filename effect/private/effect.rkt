@@ -8,10 +8,10 @@
  (contract-out
   [effect (-> procedure? effect?)]
   [effect? predicate/c]
-  [effect-procedure (-> effect? procedure?)]
-  [continue procedure?])
+  [effect-procedure (-> effect? procedure?)])
  define-effect
- handle)
+ handle
+ continue)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
@@ -21,7 +21,8 @@
                      syntax/parse
                      syntax/transformer)
          racket/control
-         racket/match)
+         racket/match
+         racket/stxparam)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; data
@@ -56,10 +57,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `continue`
 
-(define (continue . args)
-  (apply (current-continue) args))
-
-(define current-continue (make-parameter #f))
+(define-syntax-parameter continue
+  (λ (stx)
+    (raise-syntax-error #f "use of continue outside of handle" stx)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `handle`
@@ -68,25 +68,25 @@
   (syntax-parse stx
     [(_ ?e:expr [?p:expr ?v:expr ...] ...)
      #'(let ()
-         (define (user-handler eff args)
-           (match (cons eff args)
-             [?p ?v ...] ...
-             [_ (fallback eff args user-handler)]))
+         (define (user-handler eff args kont)
+           (syntax-parameterize ([continue (make-rename-transformer #'kont)])
+             (match (cons eff args)
+               [?p ?v ...] ...
+               [_ (fallback eff args user-handler kont)])))
          (install-handler (λ () ?e) user-handler))]))
 
 (define (install-handler proc user-handler)
   (define (handler kont eff args)
-    (parameterize ([current-continue (wrap kont user-handler)])
-      (user-handler eff args)))
+    (user-handler eff args (wrap kont user-handler)))
   (call/prompt proc effect-prompt-tag handler))
 
 (define ((wrap proc user-handler) . args)
   (install-handler (λ () (apply proc args)) user-handler))
 
-(define (fallback eff args user-handler)
+(define (fallback eff args user-handler original-kont)
   (call/comp/check
    (λ (kont)
-     (define kont* (extend kont (current-continue)))
+     (define kont* (extend kont original-kont))
      (abort/cc effect-prompt-tag kont* eff args))
    effect-prompt-tag eff args))
 
