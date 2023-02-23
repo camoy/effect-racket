@@ -29,10 +29,12 @@
 
 (struct effect (procedure)
   #:property prop:procedure
-  (λ (self . args)
-    (define (body kont)
-      (abort/cc effect-prompt-tag kont self args))
-    (call/comp/check body effect-prompt-tag self args)))
+  (λ (eff . args)
+    (call/comp*
+     (λ (kont)
+       (abort/cc effect-prompt-tag kont eff args))
+     (λ (kont)
+       (abort* (λ () (apply (effect-procedure eff) kont args)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `define-effect`
@@ -40,7 +42,11 @@
 (define-syntax (define-effect stx)
   (syntax-parse stx
     [(_ (?name:id ?param:id ...) ?body:expr ...)
-     #:do [(define effect-stx #'(effect (λ (?param ...) ?body ...)))]
+     #:do [(define effect-stx
+             #'(effect
+                (λ (kont ?param ...)
+                  (syntax-parameterize ([continue (make-rename-transformer #'kont)])
+                    ?body ...))))]
      #:with ?effect-id (syntax-local-lift-expression effect-stx)
      #'(define-match-expander ?name
          (make-match-transformer #'?effect-id)
@@ -84,19 +90,24 @@
   (install-handler (λ () (apply proc args)) user-handler))
 
 (define (fallback eff args user-handler original-kont)
-  (call/comp/check
+  (call/comp*
    (λ (kont)
      (define kont* (extend kont original-kont))
      (abort/cc effect-prompt-tag kont* eff args))
-   effect-prompt-tag eff args))
+   (λ (kont)
+     (define kont* (extend kont original-kont))
+     (abort* (λ () (apply (effect-procedure eff) kont args))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; utils
 
-(define (call/comp/check proc pt eff args)
-  (if (continuation-prompt-available? pt)
-      (call/comp proc pt)
-      (apply (effect-procedure eff) args)))
+(define (abort* proc)
+  (abort/cc (default-continuation-prompt-tag) proc))
+
+(define (call/comp* proc default-proc)
+  (if (continuation-prompt-available? effect-prompt-tag)
+      (call/comp proc effect-prompt-tag)
+      (call/comp default-proc (default-continuation-prompt-tag))))
 
 (define ((extend k1 k2) . args)
   (call-in-continuation k1 (λ () (apply k2 args))))
