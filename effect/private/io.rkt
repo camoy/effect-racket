@@ -10,13 +10,16 @@
  (contract-out
   #;[read (-> (or/c byte? eof-object?))]
   #;[write (-> byte? void?)]
-  [println (-> string? void?)]
-  [print (-> string? void)]))
+  [println (-> any/c void?)]
+  [print (-> any/c void)]
+  [displayln (-> any/c void?)]
+  [display (-> any/c void)]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
 
 (require (prefix-in base: racket/base)
+         racket/format
          "effect.rkt")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -30,11 +33,41 @@
   (continue (void)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; auxiliary
+;; readers
 
-(define (println str)
-  (print (string-append str (string #\newline))))
+(define (read-bytes amt)
+  (list->bytes
+   (for/list ([_ (in-range amt)])
+     (read))))
 
-(define (print str)
-  (for ([byte (in-bytes (string->bytes/utf-8 str))])
-    (write byte)))
+;; TODO: read-string
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; writers
+
+(define (write-bytes bs)
+  (for ([b (in-bytes bs)])
+    (write b)))
+
+(define (write-string s)
+  (write-bytes (string->bytes/utf-8 s)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; outputs
+
+(define (newline)
+  (write-string "\n"))
+
+(define (print v)
+  (write-string (~v v)))
+
+(define (println v)
+  (print v)
+  (newline))
+
+(define (display v)
+  (write-string (~a v)))
+
+(define (displayln v)
+  (display v)
+  (newline))

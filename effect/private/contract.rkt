@@ -58,19 +58,20 @@
 
 (module+ test
   (require chk
-           "library.rkt")
+           "store.rkt")
 
-  (define generating? (reader #f))
+  (define-effect (generating?)
+    (continue #f))
+
   (define generator/c
     (-> (handle/c (-> any/c)
-          [(get (== generating?))
-           (continue #t)])
+          [(generating?) (continue #t)])
         void?))
   (define yield/c
     (->i ([x any/c])
          #:pre/name ()
          "must be generating"
-         (get generating?)
+         (generating?)
          [result any/c]))
 
   (chk

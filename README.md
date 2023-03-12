@@ -1,3 +1,1 @@
-effect-racket
-=============
-README text here.
+# `effect/racket`

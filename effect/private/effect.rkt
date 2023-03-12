@@ -96,7 +96,7 @@
      (abort/cc effect-prompt-tag kont* eff args))
    (λ (kont)
      (define kont* (extend kont original-kont))
-     (abort* (λ () (apply (effect-procedure eff) kont args))))))
+     (abort* (λ () (apply (effect-procedure eff) kont* args))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; utils
@@ -123,10 +123,12 @@
   (define num-buffer null)
 
   (define-effect (print-str str)
-    (set! err-buffer 'print-str))
+    (set! err-buffer 'print-str)
+    (continue (void)))
 
   (define-effect (print-num n)
-    (set! err-buffer 'print-num))
+    (set! err-buffer 'print-num)
+    (continue (void)))
 
   (define (handle-str proc)
     (handle (proc)

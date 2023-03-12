@@ -11,6 +11,8 @@
   [box-get (-> box? any/c)]
   [box-set! (-> box? any/c void?)]
   [store? predicate/c]
+  ;; Cannot contract effects because they're syntax.
+  ;; Also interferes with `effect?` predicate.
   #;[current-store (-> (or/c #f store?))]
   #;[replace-store! (-> store? void?)])
  current-store
