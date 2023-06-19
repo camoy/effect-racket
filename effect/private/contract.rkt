@@ -88,7 +88,7 @@
   (define (generating-handler val)
     (contract-handler
      [(generating)
-      (values (generating-handler val) val)]))
+      (values val (generating-handler val))]))
 
   (define generator/c
     (-> (contract-handler/c (generating-handler #t))

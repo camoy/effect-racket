@@ -7,15 +7,105 @@
  (rename-out [#%plain-module-begin #%module-begin]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; require
+
+(require (for-syntax racket/base
+                     racket/require-transform
+                     racket/provide-transform
+                     racket/syntax
+                     syntax/strip-context
+                     syntax/stx
+                     syntax/parse)
+         racket/contract
+         "main.rkt")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; data
+
+(struct seal (val))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; reader
 
 (module reader syntax/module-reader
   effect/racket)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; require replacement
+
+(begin-for-syntax
+  (define require-definition-syntaxes (make-hash)))
+
+(define-syntax (-require stx)
+  (syntax-parse stx
+    [(_ ?sub ...)
+     #:with ?require
+     (local-expand #'(require (seal-import (combine-in ?sub ...)))
+                   'top-level
+                   (list #'module*))
+     #:with ([?lhs ?rhs] ...)
+     (for/list ([(lhs rhs) (in-hash require-definition-syntaxes)])
+       (list (replace-context stx lhs) rhs))
+     (hash-clear! require-definition-syntaxes)
+     #`(begin
+         ?require
+         (define ?lhs (unseal '?lhs ?rhs)) ...)]))
+
+(define-syntax seal-import
+  (make-require-transformer
+   (syntax-parser
+     [(_ ?sub)
+      (define-values (raw-imports import-srcs)
+        (expand-import #'?sub))
+      (define imports
+        (for/list ([imp (in-list raw-imports)])
+          (define id (import-local-id imp))
+          (define redirect (datum->syntax id (gensym)))
+          (hash-set! require-definition-syntaxes id redirect)
+          (struct-copy import imp [local-id redirect])))
+      (values imports import-srcs)])))
+
+(define (unseal name v)
+  (if (seal? v)
+      (seal-val v)
+      (raise-user-error 'effect/racket
+                        "import ~a is from a foreign language"
+                        name)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; provide replacement
+
+(define-syntax -provide
+  (syntax-parser
+    [(_ ?sub ...)
+     #'(provide (wrap-out ?sub) ...)]))
+
+(begin-for-syntax
+  (define (export->wrapped-rename e)
+    (define local-id (export-local-id e))
+    (define wrapped-id (generate-temporary))
+    (syntax-local-lift-module-end-declaration
+     #`(define #,wrapped-id (seal #,local-id)))
+    (define out-sym (export-out-sym e))
+    #`(rename-out [#,wrapped-id #,out-sym])))
+
+(define-syntax wrap-out
+  (make-provide-pre-transformer
+   (λ (stx modes)
+     (syntax-parse stx
+       [(_ ?spec)
+        #:with (?wrap-spec ...)
+        (stx-map export->wrapped-rename (expand-export #'?spec modes))
+        (pre-expand-export
+         #'(combine-out ?wrap-spec ...)
+         modes)]))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide (base)
 
 (provide
+ (all-from-out racket/contract)
+ (all-from-out "main.rkt")
  *
  +
  -
@@ -1581,7 +1671,8 @@
  prefix-in
  prefix-out
  protect-out
- provide
+ ;; provide
+ (rename-out [-provide provide])
  quasiquote
  ;; quasisyntax
  ;; quasisyntax/loc
@@ -1595,7 +1686,8 @@
  relative-in
  rename-in
  rename-out
- require
+ ;; require
+ (rename-out [-require require])
  ;; set!
  ;; set!-values
  sort

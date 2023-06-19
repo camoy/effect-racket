@@ -159,7 +159,6 @@
 
 (define propagate (gensym))
 
-;; TODO: last expression of ?v0 should have contract on values
 (define-syntax -contract-handler
   (syntax-parser
     [(_ [?p:expr ?v0:expr ...] ...)
