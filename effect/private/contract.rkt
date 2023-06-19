@@ -3,7 +3,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide
 
-(provide handle/c)
+(require racket/contract)
+(provide
+ contract-handler/c
+ ->e)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
@@ -16,65 +19,90 @@
          "effect.rkt")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; data
+;; `contract-handler/c`
 
-(struct handler-contract (arrow install)
+(struct contract-handler/c (handler)
+  #:property prop:chaperone-contract
+  (build-chaperone-contract-property
+   #:name
+   (λ (self) '(contract-handler/c ???))
+   #:late-neg-projection
+   (λ (self)
+     (match-define (contract-handler/c handler) self)
+     (λ (blm)
+       (λ (proc neg)
+         (unsafe-chaperone-procedure
+          proc
+          (make-keyword-procedure
+           (λ (kws kw-args . args)
+             (with (handler)
+               (keyword-apply proc kws kw-args args)))
+           (λ args
+             (with (handler)
+               (apply proc args))))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; `->e`
+
+(define (->e to from)
+  (->e-contract
+   (coerce-contract '->e to)
+   (coerce-contract '->e from)))
+
+(struct ->e-contract (to from)
   #:property prop:chaperone-contract
   (build-chaperone-contract-property
    #:name
    (λ (self)
-     (define arrow (handler-contract-arrow self))
-     `(handle/c ,arrow ???))
+     (match-define (->e-contract to from) self)
+     `(->e ,(contract-name to) ,(contract-name from)))
    #:late-neg-projection
    (λ (self)
-     (match-define (handler-contract arrow install) self)
-     (define arrow-lnp (get/build-late-neg-projection arrow))
+     (match-define (->e-contract to from) self)
+     (define arr (-> to from))
+     (define lnp (get/build-late-neg-projection arr))
      (λ (blm)
-       (define blm* (blame-add-context blm "arrow contract of"))
-       (define arrow+blm (arrow-lnp blm*))
+       (define lnp+blm (lnp (blame-swap blm)))
        (λ (proc neg)
+         (define perform* (lnp+blm perform neg))
+         (define h (handler [eff (continue (perform* eff))]))
          (unsafe-chaperone-procedure
-          (arrow+blm proc neg)
+          proc
           (make-keyword-procedure
            (λ (kws kw-args . args)
-             (install (λ () (keyword-apply proc kws kw-args args))))
+             (with (h)
+               (keyword-apply proc kws kw-args args)))
            (λ args
-             (install (λ () (apply proc args)))))))))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; `handle/c`
-
-(define-syntax (handle/c stx)
-  (syntax-parse stx
-    [(_ ?ctc:expr [?p:expr ?e:expr] ...)
-     #'(handler-contract
-        ?ctc
-        (λ (proc)
-          (handle (proc)
-            [?p ?e] ...)))]))
+             (with (h)
+               (apply proc args))))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; tests
 
 (module+ test
-  (require chk
-           "store.rkt")
+  (require chk)
 
-  (define-effect (generating?)
-    (continue #f))
+  (effect other ())
+  (effect generating ())
+
+  (define (generating-handler val)
+    (contract-handler
+     [(generating)
+      (values val (generating-handler val))]))
 
   (define generator/c
-    (-> (handle/c (-> any/c)
-          [(generating?) (continue #t)])
+    (-> (contract-handler/c (generating-handler #t))
         void?))
+
   (define yield/c
     (->i ([x any/c])
          #:pre/name ()
          "must be generating"
-         (generating?)
+         (generating)
          [result any/c]))
 
   (chk
+   ;; `contract-handler/c`
    #:do (define/contract (generator f)
           generator/c
           (f)
@@ -84,8 +112,48 @@
           yield/c
           x)
 
-   (generator void)  (void)
-   (generator (λ () (yield 42)))  (void)
-   #:x (yield 42)
+   (with ((generating-handler #f))
+     (generator void))
+   (void)
+
+   (with ((generating-handler #f))
+     (generator (λ () (yield 42))))
+   (void)
+
+   #:x
+   (with ((generating-handler #f))
+     (yield 42))
    "must be generating"
+
+   ;; `->e`
+   #:do (define/contract (g f)
+          (-> (->e generating? boolean?) any)
+          (f))
+
+   #:do (define/contract (h f)
+          (-> (->e any/c number?) any)
+          (f))
+
+   #:do (define/contract (i f)
+          (-> (->e other? boolean?) any)
+          (f))
+
+   #:do
+   (define (generating-handler* val)
+     (handler
+      [(generating) (continue val)]))
+
+   #:t
+   (with ((generating-handler* #t))
+     (g (λ () (generating))))
+
+   #:x
+   (with ((generating-handler* #t))
+     (h (λ () (generating))))
+   "promised: number?"
+
+   #:x
+   (with ((generating-handler* #t))
+     (i (λ () (generating))))
+   "expected: other?"
    ))

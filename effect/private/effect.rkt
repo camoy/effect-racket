@@ -3,23 +3,40 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide
 
-(require racket/contract)
 (provide
- (contract-out
-  [effect (-> procedure? effect?)]
-  [effect? predicate/c]
-  [effect-procedure (-> effect? procedure?)])
- define-effect
- handle
- continue)
+ ;; structs
+ (struct-out token)
+ (struct-out effect-value)
+
+ ;; handlers
+ handler?
+ program-handler?
+ contract-handler?
+
+ ;; syntax
+ (rename-out
+  [-handler handler]
+  [-contract-handler contract-handler])
+ continue
+ with
+
+ ;; effects
+ effect
+ effect-value?
+ effect-value->list
+
+ ;; private
+ perform)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
 
 (require (for-syntax racket/base
                      racket/match
+                     racket/syntax
                      syntax/parse
                      syntax/transformer)
+         racket/contract
          racket/control
          racket/match
          racket/stxparam)
@@ -27,123 +44,199 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; data
 
-(struct effect (procedure)
-  #:property prop:procedure
-  (λ (eff . args)
-    (call/comp*
-     (λ (kont)
-       (abort/cc effect-prompt-tag kont eff args))
-     (λ (kont)
-       (abort* (λ () (apply (effect-procedure eff) kont args)))))))
+(struct token (name))
+(struct effect-value (token args))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; `define-effect`
-
-(define-syntax (define-effect stx)
-  (syntax-parse stx
-    [(_ (?name:id ?param:id ...) ?body:expr ...)
-     #:do [(define effect-stx
-             #'(effect
-                (λ (kont ?param ...)
-                  (syntax-parameterize ([continue (make-rename-transformer #'kont)])
-                    ?body ...))))]
-     #:with ?effect-id (syntax-local-lift-expression effect-stx)
-     #'(define-match-expander ?name
-         (make-match-transformer #'?effect-id)
-         (make-variable-like-transformer #'?effect-id))]))
-
-(begin-for-syntax
-  (define ((make-match-transformer effect-id) stx)
-    (syntax-parse stx
-      [(_ ?p ...) #`(list (== #,effect-id) ?p ...)])))
+(struct handler (proc))
+(struct program-handler handler ())
+(struct contract-handler handler ())
 
 (define effect-prompt-tag
   (make-continuation-prompt-tag))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; `effect`
+
+(define-syntax effect
+  (syntax-parser
+    [(_ ?name:id (?param:id ...))
+     #:with ?predicate (format-id #'?name "~a?" #'?name)
+     #:with ?token (syntax-local-lift-expression #`(token '?name))
+     #:with ?arity #`#,(length (syntax-e #'(?param ...)))
+     #:with ?performer (syntax-local-lift-expression #'(make-performer ?token ?arity))
+     #'(begin
+         (define (?predicate x)
+           (and (effect-value? x)
+                (eq? (effect-value-token x) ?token)))
+         (define-match-expander ?name
+           (make-match-transformer #'?token ?arity)
+           (make-variable-like-transformer #'?performer)))]))
+
+(begin-for-syntax
+  (define (make-match-transformer token arity)
+    (syntax-parser
+      [(_ ?p ...)
+       #:do [(define pat-arity (length (syntax-e #'(?p ...))))]
+       #:fail-unless (= pat-arity arity) (arity-error arity)
+       #`(effect-value (== #,token) (list ?p ...))]))
+
+  (define (arity-error arity)
+    (define params (pluralize "parameter" arity))
+    (format "expected exactly ~a ~a" arity params))
+
+  (define (pluralize word num)
+    (if (= num 1) word (string-append word "s"))))
+
+(define (make-performer token arity)
+  (procedure-reduce-arity
+   (λ args (perform (effect-value token args)))
+   arity))
+
+(define (perform eff-val)
+  (match-define (effect-value token args) eff-val)
+  (call/comp*
+   token
+   (λ (kont) (abort/cc effect-prompt-tag kont eff-val))))
+
+(define effect-value->list effect-value-args)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `continue`
 
 (define-syntax-parameter continue
   (λ (stx)
-    (raise-syntax-error #f "use of continue outside of handle" stx)))
+    (raise-syntax-error #f "cannot use continue outside handle" stx)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; `with`
+
+(define-syntax with
+  (syntax-parser
+    [(_ () ?body:expr ...)
+     #'(let () ?body ...)]
+    [(_ (?handler ?more ...) ?body:expr ...)
+     #:declare ?handler (expr/c #'handler? #:name "with handler")
+     #'(let ([h ?handler.c]
+             [thk (λ () (with (?more ...) ?body ...))])
+         (if (contract-handler? h)
+             (install-contract-handler thk (handler-proc h))
+             (install-handler thk (handler-proc h))))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `handle`
 
-(define-syntax (handle stx)
-  (syntax-parse stx
-    [(_ ?e:expr [?p:expr ?v:expr ...] ...)
+(define-syntax -handler
+  (syntax-parser
+    [(_ [?p:expr ?v:expr ...] ...)
      #'(let ()
-         (define (user-handler eff args kont)
+         (define (user-handler eff-val kont)
            (syntax-parameterize ([continue (make-rename-transformer #'kont)])
-             (match (cons eff args)
+             (match eff-val
                [?p ?v ...] ...
-               [_ (fallback eff args user-handler kont)])))
-         (install-handler (λ () ?e) user-handler))]))
+               [_ (fallback eff-val user-handler kont)])))
+         (program-handler user-handler))]))
 
 (define (install-handler proc user-handler)
-  (define (handler kont eff args)
-    (user-handler eff args (wrap kont user-handler)))
+  (define (handler kont eff-val)
+    (if (continuation*-mark? kont)
+        (fallback eff-val user-handler kont)
+        (user-handler eff-val (wrap kont user-handler))))
   (call/prompt proc effect-prompt-tag handler))
 
-(define ((wrap proc user-handler) . args)
-  (install-handler (λ () (apply proc args)) user-handler))
+(define (wrap kont user-handler)
+  (match-define (continuation* proc mark?) kont)
+  (define (kont* . args)
+    (install-handler (λ () (apply proc args)) user-handler))
+  (continuation* kont* mark?))
 
-(define (fallback eff args user-handler original-kont)
+(define (fallback eff-val user-handler original-kont)
   (call/comp*
-   (λ (kont)
-     (define kont* (extend kont original-kont))
-     (abort/cc effect-prompt-tag kont* eff args))
-   (λ (kont)
-     (define kont* (extend kont original-kont))
-     (abort* (λ () (apply (effect-procedure eff) kont* args))))))
+   (effect-value-token eff-val)
+   (λ (kont) (abort/cc effect-prompt-tag kont eff-val))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; `handle-contract`
+
+(define propagate (gensym))
+
+(define-syntax -contract-handler
+  (syntax-parser
+    [(_ [?p:expr ?v:expr ...] ...)
+     #'(let ()
+         (define (user-handler eff-val)
+           (with-continuation-mark contract-continuation-mark-key #t
+             (match eff-val
+               [?p ?v ...] ...
+               [_ (values #f propagate)])))
+         (contract-handler user-handler))]))
+
+(define (install-contract-handler proc user-handler)
+  (define (handler kont eff-val)
+    (if (continuation*-mark? kont)
+        (let-values ([(val next-handler) (user-handler eff-val)])
+          (if (eq? propagate next-handler)
+              (fallback eff-val user-handler kont)
+              ((wrap kont (handler-proc next-handler)) val)))
+        (fallback eff-val user-handler kont)))
+  (call/prompt proc effect-prompt-tag handler))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; extended continuation
+
+(struct continuation* (proc mark?)
+  #:property prop:procedure 0)
+
+(define (make-continuation* k)
+  (continuation* k (continuation-contract-mark-present? k)))
+
+(define (extend k1 k2)
+  (match-define (continuation* proc present?) k2)
+  (continuation*
+   (λ args (call-in-continuation k1 (λ () (apply proc args))))
+   (or (continuation-contract-mark-present? k1) present?)))
+
+(define (continuation-contract-mark-present? kont)
+  (continuation-mark-set-first
+   (continuation-marks kont)
+   contract-continuation-mark-key))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; utils
 
-(define (abort* proc)
-  (abort/cc (default-continuation-prompt-tag) proc))
-
-(define (call/comp* proc default-proc)
+(define (call/comp* token proc)
   (if (continuation-prompt-available? effect-prompt-tag)
-      (call/comp proc effect-prompt-tag)
-      (call/comp default-proc (default-continuation-prompt-tag))))
-
-(define ((extend k1 k2) . args)
-  (call-in-continuation k1 (λ () (apply k2 args))))
+      (call/comp (λ (kont) (proc (make-continuation* kont)))
+                 effect-prompt-tag)
+      (error (token-name token) "no corresponding handler")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; tests
 
 (module+ test
-  (require chk)
+  (require chk
+           syntax/macro-testing)
 
   (define err-buffer #f)
   (define str-buffer null)
   (define num-buffer null)
 
-  (define-effect (print-str str)
-    (set! err-buffer 'print-str)
-    (continue (void)))
+  (effect print-str (str))
+  (effect print-num (n))
 
-  (define-effect (print-num n)
-    (set! err-buffer 'print-num)
-    (continue (void)))
-
-  (define (handle-str proc)
-    (handle (proc)
+  (define handler-str
+    (-handler
       [(print-str str)
        (set! str-buffer (cons str str-buffer))
        (continue (void))]))
 
-  (define (handle-num proc)
-    (handle (proc)
+  (define handler-num
+    (-handler
       [(print-num num)
        (set! num-buffer (cons num num-buffer))
        (continue (void))]))
 
-  (define (handle-both proc)
-    (handle (proc)
+  (define handler-both
+    (-handler
       [(print-str str)
        (set! str-buffer (cons str str-buffer))
        (continue (void))]
@@ -156,41 +249,88 @@
     (set! str-buffer null)
     (set! num-buffer null))
 
-  (chk
-   ;; no handler
-   #:do (print-str "hi")
-   err-buffer  'print-str
-   #:do (reset-buffers!)
+  (effect authorized ())
 
+  (define (handler-auth auth?)
+    (-contract-handler
+     [(authorized) (values auth? (handler-auth auth?))]))
+
+  (chk
    ;; single handler
-   #:do (handle-str (λ ()
-                      (print-str "hi")
-                      (print-str "there")))
+   #:do (with (handler-str)
+          (print-str "hi")
+          (print-str "there"))
    str-buffer  '("there" "hi")
    #:do (reset-buffers!)
 
    ;; multiple handlers (same `handle`)
-   #:do (handle-both (λ () (print-num 42) (print-str "hi")))
+   #:do (with (handler-both)
+          (print-num 42)
+          (print-str "hi"))
    num-buffer  '(42)
    str-buffer  '("hi")
    #:do (reset-buffers!)
 
    ;; multiple handlers (long sequence)
-   #:do (handle-both
-         (λ ()
-           (print-num 42)
-           (print-str "hi")
-           (print-str "there")
-           (print-num 43)
-           (print-num 44)
-           (print-str "done!")))
+   #:do (with (handler-both)
+          (print-num 42)
+          (print-str "hi")
+          (print-str "there")
+          (print-num 43)
+          (print-num 44)
+          (print-str "done!"))
    num-buffer  '(44 43 42)
    str-buffer  '("done!" "there" "hi")
    #:do (reset-buffers!)
 
    ;; multiple handlers (different `handle`)
-   #:do (handle-str (λ () (handle-num (λ () (print-num 42) (print-str "hi")))))
+   #:do (with (handler-str)
+          (with (handler-num)
+            (print-num 42)
+            (print-str "hi")))
    num-buffer  '(42)
    str-buffer  '("hi")
    #:do (reset-buffers!)
+
+   ;; multiple handlers (same `with`)
+   #:do (with (handler-str handler-num)
+          (print-num 42)
+          (print-str "hi"))
+   num-buffer  '(42)
+   str-buffer  '("hi")
+   #:do (reset-buffers!)
+
+   ;; contract handler
+   #:do (define/contract (login x)
+          (-> (λ (x) (authorized)) any)
+          x)
+   #:t (with ((handler-auth #t))
+         (login 'stuff))
+
+   ;; contract propagated
+   #:do (define propagate
+          (-contract-handler
+           [(authorized) (values (authorized) propagate)]))
+   #:t (with ((handler-auth #t) propagate)
+         (login 'stuff))
+
+   ;; error: normal handler and contract perform
+   #:do (define/contract (thingy x)
+          (-> (λ (x) (print-str x)) any)
+          x)
+   #:x (with (handler-str)
+         (thingy 'stuff))
+   "print-str: no corresponding handler"
+
+   ;; error: contract handler and normal perform
+   #:x (with ((handler-auth #t))
+         (authorized))
+   "authorized: no corresponding handler"
+
+   ;; error: effect pattern arity
+   #:x
+   (convert-syntax-error
+    (-handler
+      [(print-num num extra) (continue (void))]))
+   "expected exactly 1 parameter"
    ))

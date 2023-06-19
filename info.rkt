@@ -1,8 +1,19 @@
 #lang info
+
+;; General
+
 (define collection 'multi)
-(define deps '("base"))
-(define build-deps '("scribble-lib" "racket-doc" "rackunit-lib"))
-(define pkg-desc "Description Here")
+(define pkg-desc "")
 (define version "0.0")
 (define pkg-authors '(camoy))
-(define license '(Apache-2.0 OR MIT))
+
+;; Dependencies
+
+(define deps
+  '("base"))
+
+(define build-deps
+  '("chk-lib"
+    "racket-doc"
+    "sandbox-lib"
+    "scribble-lib"))
