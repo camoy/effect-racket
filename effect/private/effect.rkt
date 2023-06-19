@@ -1,25 +1,22 @@
-#lang errortrace racket/base
+#lang racket/base
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide
 
-(provide
- (struct-out token)
- (struct-out effect-value)
- handler?
- program-handler?
- contract-handler?
- (rename-out
-  [-handler handler]
-  [-contract-handler contract-handler])
- ;; TODO: continue/continue* should have contract
- continue
- continue*
- with
- effect
- effect-value?
- effect-value->list
- perform)
+(provide (struct-out token)
+         (struct-out effect-value)
+         (rename-out [-handler handler]
+                     [-contract-handler contract-handler])
+         handler?
+         program-handler?
+         contract-handler?
+         continue
+         continue*
+         with
+         effect
+         effect-value?
+         effect-value->list
+         perform)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
@@ -174,16 +171,24 @@
                [_ (values #f propagate)])))
          (contract-handler user-handler))]))
 
-;; TODO: generalize to arbitrary return values
 (define (install-contract-handler proc user-handler)
   (define (handler kont eff-val)
     (if (continuation*-mark? kont)
-        (let-values ([(next-handler val) (user-handler eff-val)])
-          (if (eq? propagate next-handler)
-              (fallback eff-val user-handler kont)
-              (install-handler
-               (λ () (kont val))
-               (handler-proc next-handler))))
+        (match (call-with-values (λ () (user-handler eff-val)) list)
+          [(list)
+           (raise-user-error 'contract-handler "no values returned")]
+          [(list _ ... next-handler)
+           #:when (eq? propagate next-handler)
+           (fallback eff-val user-handler kont)]
+          [(list val ... next-handler)
+           #:when (contract-handler? next-handler)
+           (install-handler
+            (λ () (apply kont val))
+            (handler-proc next-handler))]
+          [(list _ ... next-handler)
+           (raise-user-error 'contract-handler
+                             "~a is not a contract handler"
+                             next-handler)])
         (fallback eff-val user-handler kont)))
   (call/prompt proc effect-prompt-tag handler))
 
@@ -257,6 +262,11 @@
       (with (handler-num)
         (continue* (void)))]))
 
+  (define handler-multi
+    (-handler
+     [(print-num num)
+      (continue 1 2)]))
+
   (define (reset-buffers!)
     (set! err-buffer #f)
     (set! str-buffer null)
@@ -267,7 +277,7 @@
   (define (handler-auth auth?)
     (-contract-handler
      [(authorized)
-      (values (handler-auth auth?) auth?)]))
+      (values auth? (handler-auth auth?))]))
 
   (chk
    ;; single handler
@@ -290,13 +300,6 @@
           (print-num 42))
    str-buffer  '("hi")
    num-buffer  '(42)
-   #:do (reset-buffers!)
-
-   ;; error: shallow
-   #:x (with (handler-seq)
-          (print-str "hi")
-          (print-str "there"))
-   "no corresponding handler"
    #:do (reset-buffers!)
 
    ;; multiple handlers (same `handle`)
@@ -336,6 +339,11 @@
    str-buffer  '("hi")
    #:do (reset-buffers!)
 
+   ;; multiple return values
+   (with (handler-multi)
+     (print-num 42))
+   (values 1 2)
+
    ;; contract handler
    #:do (define/contract (login x)
           (-> (λ (x) (authorized)) any)
@@ -347,9 +355,46 @@
    #:do (define propagate
           (-contract-handler
            [(authorized)
-            (values propagate (authorized))]))
+            (values (authorized) propagate)]))
    #:t (with ((handler-auth #t) propagate)
          (login 'stuff))
+
+   ;; multiple values contract handler
+   #:do (define/contract (login* x)
+          (-> (λ (x)
+                (define-values (x y) (authorized))
+                (or x y))
+              any)
+          x)
+   #:do (define handler-auth*
+          (-contract-handler
+           [(authorized)
+            (values #t #f handler-auth*)]))
+   #:t (with (handler-auth*)
+         (login* 'stuff))
+
+   ;; error: insufficient values
+   #:do (define empty-handler-auth
+          (-contract-handler
+           [(authorized) (values)]))
+   #:x (with (empty-handler-auth)
+         (login* 'stuff))
+   "no values returned"
+
+   ;; error: not contract handler
+   #:do (define bad-handler-auth
+          (-contract-handler
+           [(authorized) (values 1 2)]))
+   #:x (with (bad-handler-auth)
+         (login* 'stuff))
+   "2 is not a contract handler"
+
+   ;; error: shallow
+   #:x (with (handler-seq)
+          (print-str "hi")
+          (print-str "there"))
+   "no corresponding handler"
+   #:do (reset-buffers!)
 
    ;; error: normal handler and contract perform
    #:do (define/contract (thingy x)
