@@ -1,31 +1,24 @@
-#lang racket/base
+#lang errortrace racket/base
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide
 
 (provide
- ;; structs
  (struct-out token)
  (struct-out effect-value)
-
- ;; handlers
  handler?
  program-handler?
  contract-handler?
-
- ;; syntax
  (rename-out
   [-handler handler]
   [-contract-handler contract-handler])
+ ;; TODO: continue/continue* should have contract
  continue
+ continue*
  with
-
- ;; effects
  effect
  effect-value?
  effect-value->list
-
- ;; private
  perform)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -96,7 +89,9 @@
   (match-define (effect-value token args) eff-val)
   (call/comp*
    token
-   (λ (kont) (abort/cc effect-prompt-tag kont eff-val))))
+   (λ (kont)
+     (define kont* (make-continuation* kont))
+     (abort/cc effect-prompt-tag kont* eff-val))))
 
 (define effect-value->list effect-value-args)
 
@@ -106,6 +101,10 @@
 (define-syntax-parameter continue
   (λ (stx)
     (raise-syntax-error #f "cannot use continue outside handle" stx)))
+
+(define-syntax-parameter continue*
+  (λ (stx)
+    (raise-syntax-error #f "cannot use continue* outside handle" stx)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `with`
@@ -129,21 +128,23 @@
   (syntax-parser
     [(_ [?p:expr ?v:expr ...] ...)
      #'(let ()
-         (define (user-handler eff-val kont)
-           (syntax-parameterize ([continue (make-rename-transformer #'kont)])
+         (define (user-handler eff-val original-kont kont)
+           (syntax-parameterize
+               ([continue (make-rename-transformer #'kont)]
+                [continue* (make-rename-transformer #'original-kont)])
              (match eff-val
                [?p ?v ...] ...
-               [_ (fallback eff-val user-handler kont)])))
+               [_ (fallback eff-val user-handler original-kont)])))
          (program-handler user-handler))]))
 
 (define (install-handler proc user-handler)
   (define (handler kont eff-val)
     (if (continuation*-mark? kont)
         (fallback eff-val user-handler kont)
-        (user-handler eff-val (wrap kont user-handler))))
+        (user-handler eff-val kont (wrap user-handler kont))))
   (call/prompt proc effect-prompt-tag handler))
 
-(define (wrap kont user-handler)
+(define (wrap user-handler kont)
   (match-define (continuation* proc mark?) kont)
   (define (kont* . args)
     (install-handler (λ () (apply proc args)) user-handler))
@@ -152,31 +153,37 @@
 (define (fallback eff-val user-handler original-kont)
   (call/comp*
    (effect-value-token eff-val)
-   (λ (kont) (abort/cc effect-prompt-tag kont eff-val))))
+   (λ (kont)
+     (define kont* (extend kont original-kont))
+     (abort/cc effect-prompt-tag kont* eff-val))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `handle-contract`
 
 (define propagate (gensym))
 
+;; TODO: last expression of ?v0 should have contract on values
 (define-syntax -contract-handler
   (syntax-parser
-    [(_ [?p:expr ?v:expr ...] ...)
+    [(_ [?p:expr ?v0:expr ...] ...)
      #'(let ()
          (define (user-handler eff-val)
            (with-continuation-mark contract-continuation-mark-key #t
              (match eff-val
-               [?p ?v ...] ...
+               [?p ?v0 ...] ...
                [_ (values #f propagate)])))
          (contract-handler user-handler))]))
 
+;; TODO: generalize to arbitrary return values
 (define (install-contract-handler proc user-handler)
   (define (handler kont eff-val)
     (if (continuation*-mark? kont)
-        (let-values ([(val next-handler) (user-handler eff-val)])
+        (let-values ([(next-handler val) (user-handler eff-val)])
           (if (eq? propagate next-handler)
               (fallback eff-val user-handler kont)
-              ((wrap kont (handler-proc next-handler)) val)))
+              (install-handler
+               (λ () (kont val))
+               (handler-proc next-handler))))
         (fallback eff-val user-handler kont)))
   (call/prompt proc effect-prompt-tag handler))
 
@@ -205,8 +212,7 @@
 
 (define (call/comp* token proc)
   (if (continuation-prompt-available? effect-prompt-tag)
-      (call/comp (λ (kont) (proc (make-continuation* kont)))
-                 effect-prompt-tag)
+      (call/comp (λ (kont) (proc kont)) effect-prompt-tag)
       (error (token-name token) "no corresponding handler")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -244,6 +250,13 @@
        (set! num-buffer (cons num num-buffer))
        (continue (void))]))
 
+  (define handler-seq
+    (-handler
+     [(print-str str)
+      (set! str-buffer (cons str str-buffer))
+      (with (handler-num)
+        (continue* (void)))]))
+
   (define (reset-buffers!)
     (set! err-buffer #f)
     (set! str-buffer null)
@@ -253,7 +266,8 @@
 
   (define (handler-auth auth?)
     (-contract-handler
-     [(authorized) (values auth? (handler-auth auth?))]))
+     [(authorized)
+      (values (handler-auth auth?) auth?)]))
 
   (chk
    ;; single handler
@@ -261,6 +275,28 @@
           (print-str "hi")
           (print-str "there"))
    str-buffer  '("there" "hi")
+   #:do (reset-buffers!)
+
+   ;; propagate properly
+   #:do (with (handler-str (-handler))
+          (print-str "hi")
+          (print-str "there"))
+   str-buffer  '("there" "hi")
+   #:do (reset-buffers!)
+
+   ;; shallow
+   #:do (with (handler-seq)
+          (print-str "hi")
+          (print-num 42))
+   str-buffer  '("hi")
+   num-buffer  '(42)
+   #:do (reset-buffers!)
+
+   ;; error: shallow
+   #:x (with (handler-seq)
+          (print-str "hi")
+          (print-str "there"))
+   "no corresponding handler"
    #:do (reset-buffers!)
 
    ;; multiple handlers (same `handle`)
@@ -310,7 +346,8 @@
    ;; contract propagated
    #:do (define propagate
           (-contract-handler
-           [(authorized) (values (authorized) propagate)]))
+           [(authorized)
+            (values propagate (authorized))]))
    #:t (with ((handler-auth #t) propagate)
          (login 'stuff))
 
@@ -331,6 +368,7 @@
    #:x
    (convert-syntax-error
     (-handler
-      [(print-num num extra) (continue (void))]))
+     [(print-num num extra)
+      (continue #f)]))
    "expected exactly 1 parameter"
    ))

@@ -37,7 +37,8 @@ TODO
 
   (define increment-service
     (handler
-      [(increment k) (continue (add1 k))]))]
+      [(increment k)
+      (continue (add1 k))]))]
 
 @examples[#:eval evaluator #:label #f
   (with (increment-service)
@@ -46,7 +47,7 @@ TODO
 @section{Effects}
 
 @defform[(effect id (param ...))]{
-  TODO
+  defines three things: perform effect function, match pattern syntax, effect predicate
 }
 
 @defproc[(effect-value? [v any/c]) boolean?]{
@@ -71,8 +72,12 @@ TODO
   Returns if @racket[v] is a handler.
 }
 
-@defproc[(continue [v any/c]) any]{
-  TODO
+@defproc[(continue [v any/c] ...) any]{
+  TODO: deep
+}
+
+@defproc[(continue* [v any/c] ...) any]{
+  TODO: shallow
 }
 
 @defform[(with (handler ...) body ...+)]{
@@ -81,7 +86,7 @@ TODO
 
 @section{Contracts}
 
-@defproc[(contract-handler/c [handler contract-handler?]) contract?]{
+@defproc[(contract-handler/c [handler handler?]) contract?]{
   TODO
 }
 
