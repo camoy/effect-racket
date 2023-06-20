@@ -4,7 +4,7 @@
 ;; provide
 
 (provide
- (rename-out [#%plain-module-begin #%module-begin]))
+ (rename-out [#%mb #%module-begin]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
@@ -17,12 +17,31 @@
                      syntax/stx
                      syntax/parse)
          racket/contract
+         syntax/wrap-modbeg
+         "private/io.rkt"
          "main.rkt")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; data
 
 (struct seal (val))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; module begin
+
+(define-syntax #%mb
+  (make-wrapping-module-begin	#'with-kernel-service))
+
+(define kernel-service
+  io-service)
+
+(define-syntax with-kernel-service
+  (syntax-parser
+    [(_ ?e)
+     #'(with (kernel-service) (write-if-not-void ?e))]))
+
+(define (write-if-not-void x)
+  (if (void? x) (void) (write x)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; reader
@@ -1051,7 +1070,7 @@
  ;; random-seed
  rational?
  rationalize
- ;; read
+ read
  ;; read-accept-bar-quote
  ;; read-accept-box
  ;; read-accept-compiled
@@ -1452,7 +1471,7 @@
  ;; will-register
  ;; will-try-execute
  ;; wrap-evt
- ;; write
+ write
  ;; write-byte
  ;; write-bytes
  ;; write-bytes-avail

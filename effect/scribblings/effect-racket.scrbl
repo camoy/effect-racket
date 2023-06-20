@@ -1,6 +1,6 @@
 #lang scribble/manual
 
-@;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 @;; require
 
 @require[@for-label[racket/base
@@ -30,19 +30,23 @@
   Backwards compatibility is not guaranteed.
 }
 
-TODO
+This package provides support for effect handlers,
+both as a library,
+and as a language.
 
-@;@examples[#:eval evaluator #:no-result
-@;  ]
-@;
-@;@examples[#:eval evaluator #:label #f
-@;  (with (increment-service)
-@;    (+ (increment) (increment)))]
+@racketmod[
+effect/racket
+
+(with (write-service)
+  (write 'hello))]
 
 @section{Effects}
 
 @defform[(effect id (param ...))]{
-  defines three things: perform effect function, match pattern syntax, effect predicate
+  defines three things: perform effect function,
+  failure,
+  match pattern syntax,
+  effect predicate
 }
 
 @defproc[(effect-value? [v any/c]) boolean?]{
