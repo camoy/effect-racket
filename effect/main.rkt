@@ -15,6 +15,7 @@
  handler
  contract-handler
  continue
+ continue*
  with
 
  ;; `contract.rkt`

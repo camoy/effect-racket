@@ -59,12 +59,16 @@
    #:late-neg-projection
    (λ (self)
      (match-define (->e-contract to from) self)
-     (define arr (-> to from))
-     (define lnp (get/build-late-neg-projection arr))
+     (define to-lnp (get/build-late-neg-projection to))
+     (define from-lnp (get/build-late-neg-projection from))
      (λ (blm)
-       (define lnp+blm (lnp (blame-swap blm)))
+       (define to-lnp+blm
+         (to-lnp (blame-add-context blm "the performed effect")))
+       (define from-lnp+blm
+         (from-lnp (blame-add-context blm "the effect response" #:swap? #t)))
        (λ (proc neg)
-         (define perform* (lnp+blm perform neg))
+         (define (perform* eff)
+           (from-lnp+blm (perform (to-lnp+blm eff neg) #f) neg))
          (define h (handler [eff (continue (perform* eff))]))
          (unsafe-chaperone-procedure
           proc

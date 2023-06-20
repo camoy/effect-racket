@@ -28,6 +28,7 @@
                      syntax/transformer)
          racket/contract
          racket/control
+         racket/function
          racket/match
          racket/stxparam)
 
@@ -78,17 +79,16 @@
     (if (= num 1) word (string-append word "s"))))
 
 (define (make-performer token arity)
-  (procedure-reduce-arity
-   (λ args (perform (effect-value token args)))
-   arity))
+  (define (performer #:fail [fail #f] . args)
+    (perform (effect-value token args) fail))
+  (procedure-reduce-keyword-arity performer arity null '(#:fail)))
 
-(define (perform eff-val)
+(define (perform eff-val fail)
   (match-define (effect-value token args) eff-val)
   (call/comp*
-   token
+   token fail #f
    (λ (kont)
-     (define kont* (make-continuation* kont))
-     (abort/cc effect-prompt-tag kont* eff-val))))
+     (abort/cc effect-prompt-tag kont eff-val fail))))
 
 (define effect-value->list effect-value-args)
 
@@ -115,8 +115,8 @@
      #'(let ([h ?handler.c]
              [thk (λ () (with (?more ...) ?body ...))])
          (if (contract-handler? h)
-             (install-contract-handler thk (handler-proc h))
-             (install-handler thk (handler-proc h))))]))
+             (install-contract-handler (handler-proc h) thk)
+             (install-handler (handler-proc h) thk)))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `handle`
@@ -125,34 +125,30 @@
   (syntax-parser
     [(_ [?p:expr ?v:expr ...] ...)
      #'(let ()
-         (define (user-handler eff-val original-kont kont)
+         (define (user-handler eff-val original-kont kont fail)
            (syntax-parameterize
                ([continue (make-rename-transformer #'kont)]
                 [continue* (make-rename-transformer #'original-kont)])
              (match eff-val
                [?p ?v ...] ...
-               [_ (fallback eff-val user-handler original-kont)])))
+               [_ (fallback eff-val user-handler original-kont fail)])))
          (program-handler user-handler))]))
 
-(define (install-handler proc user-handler)
-  (define (handler kont eff-val)
-    (if (continuation*-mark? kont)
-        (fallback eff-val user-handler kont)
-        (user-handler eff-val kont (wrap user-handler kont))))
+(define (install-handler user-handler proc)
+  (define (handler kont eff-val fail)
+    (if (contract-marked? kont)
+        (fallback eff-val user-handler kont fail)
+        (user-handler eff-val kont (wrap user-handler kont) fail)))
   (call/prompt proc effect-prompt-tag handler))
 
 (define (wrap user-handler kont)
-  (match-define (continuation* proc mark?) kont)
-  (define (kont* . args)
-    (install-handler (λ () (apply proc args)) user-handler))
-  (continuation* kont* mark?))
+  (cont-wrap (curry install-handler user-handler) kont))
 
-(define (fallback eff-val user-handler original-kont)
+(define (fallback eff-val user-handler original-kont fail)
   (call/comp*
-   (effect-value-token eff-val)
+   (effect-value-token eff-val) fail original-kont
    (λ (kont)
-     (define kont* (extend kont original-kont))
-     (abort/cc effect-prompt-tag kont* eff-val))))
+     (abort/cc effect-prompt-tag (cont-append kont original-kont) eff-val fail))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `handle-contract`
@@ -170,54 +166,58 @@
                [_ (values #f propagate)])))
          (contract-handler user-handler))]))
 
-(define (install-contract-handler proc user-handler)
-  (define (handler kont eff-val)
-    (if (continuation*-mark? kont)
+(define (install-contract-handler user-handler proc)
+  (define (handler kont eff-val fail)
+    (if (contract-marked? kont)
         (match (call-with-values (λ () (user-handler eff-val)) list)
           [(list)
            (raise-user-error 'contract-handler "no values returned")]
           [(list _ ... next-handler)
            #:when (eq? propagate next-handler)
-           (fallback eff-val user-handler kont)]
+           (fallback eff-val user-handler kont fail)]
           [(list val ... next-handler)
            #:when (contract-handler? next-handler)
            (install-handler
-            (λ () (apply kont val))
-            (handler-proc next-handler))]
+            (handler-proc next-handler)
+            (λ () (apply kont val)))]
           [(list _ ... next-handler)
            (raise-user-error 'contract-handler
                              "~a is not a contract handler"
                              next-handler)])
-        (fallback eff-val user-handler kont)))
+        (fallback eff-val user-handler kont fail)))
   (call/prompt proc effect-prompt-tag handler))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; extended continuation
-
-(struct continuation* (proc mark?)
-  #:property prop:procedure 0)
-
-(define (make-continuation* k)
-  (continuation* k (continuation-contract-mark-present? k)))
-
-(define (extend k1 k2)
-  (match-define (continuation* proc present?) k2)
-  (continuation*
-   (λ args (call-in-continuation k1 (λ () (apply proc args))))
-   (or (continuation-contract-mark-present? k1) present?)))
-
-(define (continuation-contract-mark-present? kont)
-  (continuation-mark-set-first
-   (continuation-marks kont)
-   contract-continuation-mark-key))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; utils
 
-(define (call/comp* token proc)
-  (if (continuation-prompt-available? effect-prompt-tag)
-      (call/comp (λ (kont) (proc kont)) effect-prompt-tag)
-      (error (token-name token) "no corresponding handler")))
+(define (call/comp* token fail kont proc)
+  (cond
+    [(continuation-prompt-available? effect-prompt-tag)
+     (call/comp (λ (kont) (proc kont)) effect-prompt-tag)]
+    [(and fail kont) (call-in-continuation kont fail)]
+    [fail (fail)]
+    [else (error (token-name token) "no corresponding handler")]))
+
+(define (contract-marked? kont)
+  (continuation-mark-set-first
+   (continuation-marks kont)
+   contract-continuation-mark-key))
+
+(define append-prompt
+  (make-continuation-prompt-tag))
+
+(define (cont-append k1 k2)
+  (cont-wrap (curry call-in-continuation k1) k2))
+
+(define (cont-wrap proc k)
+  (define (capture+abort)
+    (call/comp
+     (λ (kont) (abort/cc append-prompt kont))
+     append-prompt))
+  (call/prompt
+   (λ () (proc (λ () (call-in-continuation k capture+abort))))
+   append-prompt
+   values))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; tests
@@ -343,6 +343,11 @@
      (print-num 42))
    (values 1 2)
 
+   ;; failure
+   (with (handler-str)
+     (+ 1 (print-num 0 #:fail (λ () 41))))
+   42
+
    ;; contract handler
    #:do (define/contract (login x)
           (-> (λ (x) (authorized)) any)
@@ -371,6 +376,15 @@
             (values #t #f handler-auth*)]))
    #:t (with (handler-auth*)
          (login* 'stuff))
+
+   ;; fail contract handler
+   #:do (define/contract (login-fail x)
+          (-> (λ (x) (authorized #:fail (λ () #f))) any)
+          x)
+   #:t (with ((handler-auth #t))
+         (login-fail 'stuff))
+   #:x (login-fail 'stuff)
+   "given: 'stuff"
 
    ;; error: insufficient values
    #:do (define empty-handler-auth

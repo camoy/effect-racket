@@ -32,17 +32,12 @@
 
 TODO
 
-@examples[#:eval evaluator #:no-result
-  (effect increment (k))
-
-  (define increment-service
-    (handler
-      [(increment k)
-      (continue (add1 k))]))]
-
-@examples[#:eval evaluator #:label #f
-  (with (increment-service)
-    (increment 42))]
+@;@examples[#:eval evaluator #:no-result
+@;  ]
+@;
+@;@examples[#:eval evaluator #:label #f
+@;  (with (increment-service)
+@;    (+ (increment) (increment)))]
 
 @section{Effects}
 
