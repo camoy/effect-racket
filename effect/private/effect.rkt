@@ -26,6 +26,7 @@
                      racket/syntax
                      syntax/parse
                      syntax/transformer)
+         racket/bool
          racket/contract
          racket/control
          racket/function
@@ -54,7 +55,7 @@
      #:with ?predicate (format-id #'?name "~a?" #'?name)
      #:with ?token (syntax-local-lift-expression #`(token '?name))
      #:with ?arity #`#,(length (syntax-e #'(?param ...)))
-     #:with ?performer (syntax-local-lift-expression #'(make-performer ?token ?arity))
+     #:with ?performer (syntax-local-lift-expression #'(make-performer '?name ?token ?arity))
      #'(begin
          (define (?predicate x)
            (and (effect-value? x)
@@ -78,8 +79,10 @@
   (define (pluralize word num)
     (if (= num 1) word (string-append word "s"))))
 
-(define (make-performer token arity)
+(define (make-performer name token arity)
   (define (performer #:fail [fail #f] . args)
+    (unless (implies fail ((procedure-arity-includes/c 0) fail))
+      (raise-argument-error name "(procedure-arity-includes/c 0)" fail))
     (perform (effect-value token args) fail))
   (procedure-reduce-keyword-arity performer arity null '(#:fail)))
 
@@ -406,6 +409,10 @@
          (login-fail 'stuff))
    #:x (login-fail 'stuff)
    "given: 'stuff"
+
+   ;; error: fail contract
+   #:x (authorized #:fail (λ (x) x))
+   "expected: (procedure-arity-includes/c 0)"
 
    ;; error: insufficient values
    #:do (define empty-handler-auth
