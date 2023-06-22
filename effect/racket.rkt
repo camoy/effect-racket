@@ -68,7 +68,7 @@
      (hash-clear! require-definition-syntaxes)
      #`(begin
          ?require
-         (define ?lhs (unseal '?lhs ?rhs)) ...)]))
+         (define ?lhs (seal-flip ?rhs)) ...)]))
 
 (define-syntax seal-import
   (make-require-transformer
@@ -84,12 +84,19 @@
           (struct-copy import imp [local-id redirect])))
       (values imports import-srcs)])))
 
-(define (unseal name v)
-  (if (seal? v)
-      (seal-val v)
-      (raise-user-error 'effect/racket
-                        "import ~a is from a foreign language"
-                        name)))
+(define (seal-flip v)
+  (cond
+    [(seal? v) (seal-val v)]
+    [(flat? v) v]
+    [else (seal v)]))
+
+(define (flat? v)
+  (or (immutable? v)
+      (boolean? v)
+      (number? v)
+      (char? v)
+      (pair? v)
+      (void? v)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide replacement
@@ -104,7 +111,7 @@
     (define local-id (export-local-id e))
     (define wrapped-id (generate-temporary))
     (syntax-local-lift-module-end-declaration
-     #`(define #,wrapped-id (seal #,local-id)))
+     #`(define #,wrapped-id (seal-flip #,local-id)))
     (define out-sym (export-out-sym e))
     #`(rename-out [#,wrapped-id #,out-sym])))
 
