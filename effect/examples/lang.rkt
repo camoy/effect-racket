@@ -1,6 +1,6 @@
 #lang racket/base
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; tests
 
 (module+ test
@@ -44,12 +44,32 @@
     (require racket/math)
     (sqr 1))
 
+  (module d effect/racket
+    (provide (for-syntax b))
+    (require (for-syntax racket/base))
+
+    (begin-for-syntax
+      (define (b)
+        (void))))
+
   (define-runtime-module-path-index mod-c
     '(submod "." c))
 
+  (define-runtime-module-path-index mod-d
+    '(submod "." d))
+
+  ;; https://stackoverflow.com/questions/55542698/dynamically-require-a-phase-1-for-syntax-variable-in-racket
+  (define (dynamic-require-from-syntax module binding)
+    (define ns (make-base-namespace))
+    (parameterize ([current-namespace ns])
+      (namespace-require 'racket)
+      (namespace-require/expansion-time module)
+      (eval `(define-syntax (cheater-x stx)
+               #`'#,(datum->syntax #f ,binding)))
+      (eval 'cheater-x)))
+
   (require 'a)
 
-  ;; Check that lump interop works
   (chk
    ;; effect/racket -> effect/racket (procedure)
    #:t inner-proc-ok?
@@ -62,6 +82,10 @@
 
    ;; racket/base -> effect/racket -> racket/base (macro)
    #:t (zero? ((thunk 0)))
+
+   ;; effect/racket (phase 1) -> racket/base
+   ;; Like typed/racket, phase n > 0 is normal racket/base.
+   #:t (void? ((dynamic-require-from-syntax mod-d 'b)))
 
    ;; racket/base -> effect/racket (procedure)
    #:x (dynamic-require mod-c #f)

@@ -103,9 +103,12 @@
       (define imports
         (for/list ([imp (in-list raw-imports)])
           (define id (import-local-id imp))
-          (define redirect (datum->syntax id (gensym)))
-          (hash-set! require-definition-syntaxes id redirect)
-          (struct-copy import imp [local-id redirect])))
+          (cond
+            [(zero? (import-mode imp))
+             (define redirect (datum->syntax id (gensym)))
+             (hash-set! require-definition-syntaxes id redirect)
+             (struct-copy import imp [local-id redirect])]
+            [else imp])))
       (values imports import-srcs)])))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -119,11 +122,16 @@
 (begin-for-syntax
   (define (export->wrapped-rename e)
     (define local-id (export-local-id e))
-    (define wrapped-id (generate-temporary))
-    (syntax-local-lift-module-end-declaration
-     #`(define-flipped #,wrapped-id #,local-id))
+    (define mode (export-mode e))
     (define out-sym (export-out-sym e))
-    #`(rename-out [#,wrapped-id #,out-sym])))
+    (cond
+      [(zero? mode)
+       (define wrapped-id (generate-temporary))
+       (syntax-local-lift-module-end-declaration
+        #`(define-flipped #,wrapped-id #,local-id))
+       #`(rename-out [#,wrapped-id #,out-sym])]
+      [else
+       #`(for-meta #,mode (rename-out [#,local-id #,out-sym]))])))
 
 (define-syntax wrap-out
   (make-provide-pre-transformer
