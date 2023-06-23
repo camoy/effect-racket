@@ -8,8 +8,7 @@
  ;; `effect.rkt`
  (contract-out
   [handler? predicate/c]
-  [effect-value? predicate/c]
-  [effect-value->list (-> effect-value? list?)])
+  [effect-value? predicate/c])
 
  effect
  handler

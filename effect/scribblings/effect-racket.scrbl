@@ -168,8 +168,9 @@ unusable.
   @item{@racket[id] as a procedure that performs the given effect.
   This procedure accepts an optional keyword argument
   @racket[#:fail] that,
-  given a thunk,
-  calls that thunk when no handler exists for the effect
+  given a @racket[failure-result/c],
+  calls that thunk (or yields that value)
+  when no handler exists for the effect
   in the current context.}
 
   @item{@racket[id] as a match pattern
@@ -184,10 +185,6 @@ unusable.
   An effect value is a first-class value
   that represents a request to perform an effect.
   These are the value that handlers match on.
-}
-
-@defproc[(effect-value->list [v effect-value?]) list?]{
-  Returns the list of values contained in the effect value.
 }
 
 @section{Handlers}
@@ -274,6 +271,23 @@ unusable.
   Returns a contract that protects functions
   by installing the given contract handler
   whenever that function is applied.
+
+  @examples[#:eval evaluator #:label #f
+    (effect id-callable? ())
+    (define no-id/c
+      (let ()
+        (define no-id-handler
+          (contract-handler
+            [(id-callable?) (values #f no-id-handler)]))
+        (contract-handler/c no-id-handler)))
+    (define/contract (do-it thk)
+      (-> no-id/c any)
+      (thk))
+    (define/contract (id x)
+      (->* (any/c) #:pre (id-callable?) any)
+      x)
+    (do-it (λ () (+ 1 1)))
+    (eval:error (do-it (λ () (id 1))))]
 }
 
 @defproc[(->e [eff contract?] [ret contract?]) contract?]{
@@ -282,4 +296,12 @@ unusable.
   that function is applied satisfy @racket[eff]
   and all values provided to the continuation by a handler
   satisfy @racket[ret].
+
+  @examples[#:eval evaluator #:label #f
+    (define pure/c (->e none/c any/c))
+    (define/contract (my-map f xs)
+      (-> pure/c list? list?)
+      (map f xs))
+    (my-map (λ (x) (add1 x)) '(1 2 3))
+    (eval:error (my-map (λ (x) (write x) x) '(1 2 3)))]
 }

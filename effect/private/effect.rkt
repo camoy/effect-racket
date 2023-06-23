@@ -15,13 +15,13 @@
          with
          effect
          effect-value?
-         effect-value->list
          perform)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
 
 (require (for-syntax racket/base
+                     racket/format
                      racket/match
                      racket/syntax
                      syntax/parse
@@ -31,13 +31,19 @@
          racket/control
          racket/function
          racket/match
+         racket/struct
          racket/stxparam)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; data
 
 (struct token (name))
-(struct effect-value (token args))
+(struct effect-value (token args)
+  #:methods gen:custom-write
+  [(define write-proc
+     (make-constructor-style-printer
+      (λ (self) (token-name (effect-value-token self)))
+      (λ (self) (effect-value-args self))))])
 
 (struct handler (proc))
 (struct program-handler handler ())
@@ -45,6 +51,8 @@
 
 (define effect-prompt-tag
   (make-continuation-prompt-tag))
+
+(define ABSENT (gensym))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `effect`
@@ -54,17 +62,28 @@
     [(_ ?name:id (?param:id ...))
      #:with ?predicate (format-id #'?name "~a?" #'?name)
      #:with ?token (syntax-local-lift-expression #`(token '?name))
-     #:with ?arity #`#,(length (syntax-e #'(?param ...)))
-     #:with ?performer (syntax-local-lift-expression #'(make-performer '?name ?token ?arity))
-     #'(begin
+     #:do [(define arity (length (syntax-e #'(?param ...))))]
+     #:with ?performer
+     (syntax-local-lift-expression #`(make-performer '?name ?token #,arity))
+     #:declare ?performer
+     (expr/c (performer-contract arity)
+             #:arg? #f
+             #:name (~a (syntax-e #'?name)))
+     #`(begin
          (define (?predicate x)
            (and (effect-value? x)
                 (eq? (effect-value-token x) ?token)))
          (define-match-expander ?name
-           (make-match-transformer #'?token ?arity)
-           (make-variable-like-transformer #'?performer)))]))
+           (make-match-transformer #'?token #,arity)
+           (make-variable-like-transformer #'?performer.c)))]))
 
 (begin-for-syntax
+  (define (performer-contract arity)
+    (define doms
+      (for/list ([_ (in-range arity)])
+        #'any/c))
+    #`(->* #,doms (#:fail failure-result/c) any))
+
   (define (make-match-transformer token arity)
     (syntax-parser
       [(_ ?p ...)
@@ -80,9 +99,7 @@
     (if (= num 1) word (string-append word "s"))))
 
 (define (make-performer name token arity)
-  (define (performer #:fail [fail #f] . args)
-    (unless (implies fail ((procedure-arity-includes/c 0) fail))
-      (raise-argument-error name "(procedure-arity-includes/c 0)" fail))
+  (define (performer #:fail [fail ABSENT] . args)
     (perform (effect-value token args) fail))
   (procedure-rename
    (procedure-reduce-keyword-arity performer arity null '(#:fail))
@@ -94,8 +111,6 @@
    token fail #f
    (λ (kont)
      (abort/cc effect-prompt-tag kont eff-val fail))))
-
-(define effect-value->list effect-value-args)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `continue`
@@ -198,12 +213,13 @@
 ;; utils
 
 (define (call/comp* token fail kont proc)
+  (define fail* (if (procedure? fail) fail (const fail)))
   (cond
     [(continuation-prompt-available? effect-prompt-tag)
      (call/comp (λ (kont) (proc kont)) effect-prompt-tag)]
-    [(and fail kont) (call-in-continuation kont fail)]
-    [fail (fail)]
-    [else (error (token-name token) "no corresponding handler")]))
+    [(eq? fail ABSENT) (error (token-name token) "no corresponding handler")]
+    [kont (call-in-continuation kont fail*)]
+    [else (fail*)]))
 
 (define (contract-mark kont)
   (continuation-mark-set-first
@@ -365,6 +381,11 @@
      (+ 1 (print-num 0 #:fail (λ () 41))))
    42
 
+   ;; failure result
+   (with (handler-str)
+     (+ 1 (print-num 0 #:fail 41)))
+   42
+
    ;; contract handler
    #:do (define/contract (login x)
           (-> (λ (x) (authorized)) any)
@@ -424,7 +445,7 @@
 
    ;; error: fail contract
    #:x (authorized #:fail (λ (x) x))
-   "expected: (procedure-arity-includes/c 0)"
+   "expected: a procedure that accepts 0 non-keyword arguments"
 
    ;; error: insufficient values
    #:do (define empty-handler-auth
