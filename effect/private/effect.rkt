@@ -84,7 +84,9 @@
     (unless (implies fail ((procedure-arity-includes/c 0) fail))
       (raise-argument-error name "(procedure-arity-includes/c 0)" fail))
     (perform (effect-value token args) fail))
-  (procedure-reduce-keyword-arity performer arity null '(#:fail)))
+  (procedure-rename
+   (procedure-reduce-keyword-arity performer arity null '(#:fail))
+   name))
 
 (define (perform eff-val fail)
   (match-define (effect-value token args) eff-val)
@@ -134,24 +136,25 @@
                 [continue* (make-rename-transformer #'original-kont)])
              (match eff-val
                [?p ?v ...] ...
-               [_ (fallback eff-val original-kont fail)])))
+               [_ (fallback eff-val original-kont user-handler fail)])))
          (program-handler user-handler))]))
 
 (define (install-handler user-handler proc)
   (define (handler kont eff-val fail)
     (if (contract-mark kont)
-        (fallback eff-val kont fail)
+        (fallback eff-val kont user-handler fail)
         (user-handler eff-val kont (wrap user-handler kont) fail)))
   (call/prompt proc effect-prompt-tag handler))
 
 (define (wrap user-handler kont)
   (cont-wrap (curry install-handler user-handler) kont))
 
-(define (fallback eff-val original-kont fail)
+(define (fallback eff-val original-kont user-handler fail)
   (call/comp*
    (effect-value-token eff-val) fail original-kont
    (λ (kont)
-     (abort/cc effect-prompt-tag (cont-append kont original-kont) eff-val fail))))
+     (define kont* (cont-append kont (wrap user-handler original-kont)))
+     (abort/cc effect-prompt-tag kont* eff-val fail))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `handle-contract`
@@ -178,7 +181,7 @@
            (raise-user-error 'contract-handler "no values returned")]
           [(list _ ... next-handler)
            #:when (eq? propagate next-handler)
-           (fallback eff-val kont fail)]
+           (fallback eff-val kont user-handler fail)]
           [(list val ... next-handler)
            #:when (contract-handler? next-handler)
            (install-contract-handler
@@ -188,7 +191,7 @@
            (raise-user-error 'contract-handler
                              "~a is not a contract handler"
                              next-handler)])
-        (fallback eff-val kont fail)))
+        (fallback eff-val kont user-handler fail)))
   (call/prompt proc effect-prompt-tag handler))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -329,6 +332,15 @@
    ;; multiple handlers (different `handle`)
    #:do (with (handler-str)
           (with (handler-num)
+            (print-num 42)
+            (print-str "hi")))
+   num-buffer  '(42)
+   str-buffer  '("hi")
+   #:do (reset-buffers!)
+
+   ;; multiple handlers (other order)
+   #:do (with (handler-num)
+          (with (handler-str)
             (print-num 42)
             (print-str "hi")))
    num-buffer  '(42)
