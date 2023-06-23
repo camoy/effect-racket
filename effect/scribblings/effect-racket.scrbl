@@ -34,8 +34,7 @@ This package provides support for effect handlers,
 both as a library,
 and as a language.
 Here is an implementation of
-first-class mutable references
-using effect handlers:
+first-class mutable references:
 
 @examples[#:eval evaluator #:no-result
   (struct box (default))
@@ -184,7 +183,7 @@ unusable.
   Returns if @racket[v] is an effect value.
   An effect value is a first-class value
   that represents a request to perform an effect.
-  These are the value that handlers match on.
+  These are the values that handlers match on.
 }
 
 @section{Handlers}
@@ -262,7 +261,7 @@ unusable.
   Executes @racket[body]
   with the given handlers
   installed,
-  in order.
+  nested in the given order.
 }
 
 @section{Contracts}

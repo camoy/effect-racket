@@ -22,9 +22,33 @@
          "main.rkt")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; data
+;; seal
 
-(struct seal (val))
+(module seal racket/base
+  (provide seal-flip)
+
+  (struct seal (val)
+    #:property prop:procedure
+    (λ _
+      (error 'effect/racket
+             "value cannot be used in a foreign language")))
+
+  (define (seal-flip v)
+    (cond
+      [(seal? v) (seal-val v)]
+      [(flat? v) v]
+      [else (seal v)]))
+
+  (define (flat? v)
+    (or (immutable? v)
+        (boolean? v)
+        (number? v)
+        (char? v)
+        (pair? v)
+        (void? v))))
+
+(require (for-syntax 'seal)
+         'seal)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; module begin
@@ -68,7 +92,7 @@
      (hash-clear! require-definition-syntaxes)
      #`(begin
          ?require
-         (define ?lhs (seal-flip ?rhs)) ...)]))
+         (define-flipped ?lhs ?rhs) ...)]))
 
 (define-syntax seal-import
   (make-require-transformer
@@ -84,20 +108,6 @@
           (struct-copy import imp [local-id redirect])))
       (values imports import-srcs)])))
 
-(define (seal-flip v)
-  (cond
-    [(seal? v) (seal-val v)]
-    [(flat? v) v]
-    [else (seal v)]))
-
-(define (flat? v)
-  (or (immutable? v)
-      (boolean? v)
-      (number? v)
-      (char? v)
-      (pair? v)
-      (void? v)))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide replacement
 
@@ -111,7 +121,7 @@
     (define local-id (export-local-id e))
     (define wrapped-id (generate-temporary))
     (syntax-local-lift-module-end-declaration
-     #`(define #,wrapped-id (seal-flip #,local-id)))
+     #`(define-flipped #,wrapped-id #,local-id))
     (define out-sym (export-out-sym e))
     #`(rename-out [#,wrapped-id #,out-sym])))
 
@@ -125,6 +135,14 @@
         (pre-expand-export
          #'(combine-out ?wrap-spec ...)
          modes)]))))
+
+(define-syntax define-flipped
+  (syntax-parser
+    [(_ ?new:id ?old:id)
+     #:when (syntax-local-value #'?old (λ _ #f))
+     #'(define-syntax ?new (seal-flip (syntax-local-value #'?old)))]
+    [(_ ?new:id ?old:id)
+     #'(define ?new (seal-flip ?old))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide (base)
@@ -1501,8 +1519,8 @@
  #%plain-lambda
  #%plain-module-begin
  ;; #%printing-module-begin
- #%provide
- #%require
+ ;; #%provide
+ ;; #%require
  #%stratified-body
  #%top
  #%top-interaction
