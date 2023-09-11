@@ -62,13 +62,20 @@
      (define to-lnp (get/build-late-neg-projection to))
      (define from-lnp (get/build-late-neg-projection from))
      (λ (blm)
-       (define to-lnp+blm
-         (to-lnp (blame-add-context blm "the performed effect")))
-       (define from-lnp+blm
-         (from-lnp (blame-add-context blm "the effect response" #:swap? #t)))
+       (define to-blm (blame-add-context blm "the performed effect"))
+       (define to-lnp+blm (to-lnp to-blm))
+       (define from-blm (blame-add-context blm "the effect response" #:swap? #t))
+       (define from-lnp+blm (from-lnp from-blm))
        (λ (proc neg)
          (define (perform* eff)
-           (from-lnp+blm (perform (to-lnp+blm eff neg) #f) neg))
+           (define arg
+             (with-contract-continuation-mark
+               (cons to-blm neg)
+               (to-lnp+blm eff neg)))
+           (define res (perform arg ABSENT))
+           (with-contract-continuation-mark
+             (cons from-blm neg)
+             (from-lnp+blm res neg)))
          (define h (handler [eff (continue (perform* eff))]))
          (unsafe-chaperone-procedure
           proc
@@ -142,10 +149,20 @@
           (-> (->e other? boolean?) any)
           (f))
 
+   #:do (define/contract (j)
+          (->e (λ (x) (generating) (generating))
+               (λ (x) (generating)))
+          (generating))
+
    #:do
    (define (generating-handler* val)
      (handler
       [(generating) (continue val)]))
+
+   (with ((generating-handler* 17)
+          (generating-handler #t))
+     (j))
+   17
 
    #:t
    (with ((generating-handler* #t))

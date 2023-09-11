@@ -15,7 +15,8 @@
          with
          effect
          effect-value?
-         perform)
+         perform
+         ABSENT)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
@@ -45,7 +46,8 @@
       (λ (self) (token-name (effect-value-token self)))
       (λ (self) (effect-value-args self))))])
 
-(struct handler (proc))
+(struct handler (proc)
+  #:property prop:procedure 0)
 (struct program-handler handler ())
 (struct contract-handler handler ())
 
@@ -135,8 +137,8 @@
      #'(let ([h ?handler.c]
              [thk (λ () (with (?more ...) ?body ...))])
          (if (contract-handler? h)
-             (install-contract-handler (handler-proc h) thk)
-             (install-handler (handler-proc h) thk)))]))
+             (install-contract-handler h thk)
+             (install-handler h thk)))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `handle`
@@ -147,12 +149,13 @@
      #'(let ()
          (define (user-handler eff-val original-kont kont fail)
            (syntax-parameterize
-               ([continue (make-rename-transformer #'kont)]
-                [continue* (make-rename-transformer #'original-kont)])
+             ([continue (make-rename-transformer #'kont)]
+              [continue* (make-rename-transformer #'original-kont)])
              (match eff-val
                [?p ?v ...] ...
-               [_ (fallback eff-val original-kont user-handler fail)])))
-         (program-handler user-handler))]))
+               [_ (fallback eff-val original-kont self fail)])))
+         (define self (program-handler user-handler))
+         self)]))
 
 (define (install-handler user-handler proc)
   (define (handler kont eff-val fail)
@@ -162,7 +165,11 @@
   (call/prompt proc effect-prompt-tag handler))
 
 (define (wrap user-handler kont)
-  (cont-wrap (curry install-handler user-handler) kont))
+  (define installer
+    (if (contract-handler? user-handler)
+        install-contract-handler
+        install-handler))
+  (cont-wrap (curry installer user-handler) kont))
 
 (define (fallback eff-val original-kont user-handler fail)
   (call/comp*
@@ -181,7 +188,7 @@
     [(_ [?p:expr ?v0:expr ...] ...)
      #'(let ()
          (define (user-handler eff-val mark)
-           (with-continuation-mark contract-continuation-mark-key mark
+           (with-contract-continuation-mark mark
              (match eff-val
                [?p ?v0 ...] ...
                [_ (values #f propagate)])))
@@ -200,7 +207,7 @@
           [(list val ... next-handler)
            #:when (contract-handler? next-handler)
            (install-contract-handler
-            (handler-proc next-handler)
+            next-handler
             (λ () (apply kont val)))]
           [(list _ ... next-handler)
            (raise-user-error 'contract-handler
