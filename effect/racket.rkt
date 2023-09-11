@@ -25,7 +25,8 @@
 ;; seal
 
 (module seal racket/base
-  (provide seal-flip)
+  (provide seal-it
+           unseal-it)
 
   (struct seal (val)
     #:property prop:procedure
@@ -33,11 +34,25 @@
       (error 'effect/racket
              "value cannot be used in a foreign language")))
 
-  (define (seal-flip v)
+  (struct unseal (val)
+    #:property prop:procedure
+    (λ _
+      (error 'effect/racket
+             "value cannot be used in a foreign language")))
+
+  (define (seal-it v)
     (cond
-      [(seal? v) (seal-val v)]
+      [(unseal? v) (unseal-val v)]
+      [(seal? v) v]
       [(flat? v) v]
       [else (seal v)]))
+
+  (define (unseal-it v)
+    (cond
+      [(seal? v) (seal-val v)]
+      [(unseal? v) v]
+      [(flat? v) v]
+      [else (unseal v)]))
 
   (define (flat? v)
     (or (immutable? v)
@@ -54,7 +69,7 @@
 ;; module begin
 
 (define-syntax #%mb
-  (make-wrapping-module-begin	#'with-kernel-service))
+  (make-wrapping-module-begin #'with-kernel-service))
 
 (define kernel-service
   io-service)
@@ -62,10 +77,13 @@
 (define-syntax with-kernel-service
   (syntax-parser
     [(_ ?e)
-     #'(with (kernel-service) (write-if-not-void ?e))]))
+     #'(with (kernel-service)
+         (call-with-values (λ () ?e) print-if-not-void))]))
 
-(define (write-if-not-void x)
-  (if (void? x) (void) (write x)))
+(define (print-if-not-void . args)
+  (for ([arg (in-list args)])
+    (unless (void? arg)
+      (println arg))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; reader
@@ -92,7 +110,7 @@
      (hash-clear! require-definition-syntaxes)
      #`(begin
          ?require
-         (define-flipped ?lhs ?rhs) ...)]))
+         (define-sealed unseal-it ?lhs ?rhs) ...)]))
 
 (define-syntax seal-import
   (make-require-transformer
@@ -128,7 +146,7 @@
       [(zero? mode)
        (define wrapped-id (generate-temporary))
        (syntax-local-lift-module-end-declaration
-        #`(define-flipped #,wrapped-id #,local-id))
+        #`(define-sealed seal-it #,wrapped-id #,local-id))
        #`(rename-out [#,wrapped-id #,out-sym])]
       [else
        #`(for-meta #,mode (rename-out [#,local-id #,out-sym]))])))
@@ -144,13 +162,13 @@
          #'(combine-out ?wrap-spec ...)
          modes)]))))
 
-(define-syntax define-flipped
+(define-syntax define-sealed
   (syntax-parser
-    [(_ ?new:id ?old:id)
+    [(_ ?proc:id ?new:id ?old:id)
      #:when (syntax-local-value #'?old (λ _ #f))
-     #'(define-syntax ?new (seal-flip (syntax-local-value #'?old)))]
-    [(_ ?new:id ?old:id)
-     #'(define ?new (seal-flip ?old))]))
+     #'(define-syntax ?new (?proc (syntax-local-value #'?old)))]
+    [(_ ?proc:id ?new:id ?old:id)
+     #'(define ?new (?proc ?old))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; provide (base)
@@ -474,8 +492,8 @@
  denominator
  ;; directory-exists?
  ;; directory-list
- ;; display
- ;; displayln
+ display
+ displayln
  double-flonum?
  ;; dump-memory-stats
  ;; dynamic-require
@@ -929,7 +947,7 @@
  ;; namespace?
  negative?
  ;; never-evt
- ;; newline
+ newline
  ;; normal-case-path
  not
  null
@@ -1019,7 +1037,7 @@
  primitive-closure?
  primitive-result-arity
  primitive?
- ;; print
+ print
  ;; print-as-expression
  ;; print-boolean-long-form
  ;; print-box
@@ -1034,7 +1052,7 @@
  ;; print-value-columns
  ;; print-vector-length
  ;; printf
- ;; println
+ println
  procedure->method
  procedure-arity
  procedure-arity-includes?
@@ -1516,7 +1534,7 @@
  ;; write-special-avail*
  ;; write-special-evt
  ;; write-string
- ;; writeln
+ writeln
  zero?
  #%app
  #%datum
@@ -1724,6 +1742,7 @@
  prefix-out
  protect-out
  ;; provide
+ (rename-out [provide unsafe-provide])
  (rename-out [-provide provide])
  quasiquote
  ;; quasisyntax
@@ -1739,6 +1758,7 @@
  rename-in
  rename-out
  ;; require
+ (rename-out [require unsafe-require])
  (rename-out [-require require])
  ;; set!
  ;; set!-values
