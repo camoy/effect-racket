@@ -72,7 +72,7 @@
              (with-contract-continuation-mark
                (cons to-blm neg)
                (to-lnp+blm eff neg)))
-           (define res (perform arg ABSENT))
+           (define res (perform arg))
            (with-contract-continuation-mark
              (cons from-blm neg)
              (from-lnp+blm res neg)))

@@ -15,8 +15,7 @@
          with
          effect
          effect-value?
-         perform
-         ABSENT)
+         perform)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
@@ -107,7 +106,7 @@
    (procedure-reduce-keyword-arity performer arity null '(#:fail))
    name))
 
-(define (perform eff-val fail)
+(define (perform eff-val [fail ABSENT])
   (match-define (effect-value token args) eff-val)
   (call/comp*
    token fail #f
@@ -134,14 +133,12 @@
      #'(let () ?body ...)]
     [(_ (?handler ?more ...) ?body:expr ...)
      #:declare ?handler (expr/c #'handler? #:name "with handler")
-     #'(let ([h ?handler.c]
+     #'(let ([handler ?handler.c]
              [thk (λ () (with (?more ...) ?body ...))])
-         (if (contract-handler? h)
-             (install-contract-handler h thk)
-             (install-handler h thk)))]))
+         (install handler thk))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; `handle`
+;; `handler`
 
 (define-syntax -handler
   (syntax-parser
@@ -164,24 +161,10 @@
         (user-handler eff-val kont (wrap user-handler kont) fail)))
   (call/prompt proc effect-prompt-tag handler))
 
-(define (wrap user-handler kont)
-  (define installer
-    (if (contract-handler? user-handler)
-        install-contract-handler
-        install-handler))
-  (cont-wrap (curry installer user-handler) kont))
-
-(define (fallback eff-val original-kont user-handler fail)
-  (call/comp*
-   (effect-value-token eff-val) fail original-kont
-   (λ (kont)
-     (define kont* (cont-append kont (wrap user-handler original-kont)))
-     (abort/cc effect-prompt-tag kont* eff-val fail))))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; `handle-contract`
+;; `contract-handler`
 
-(define propagate (gensym))
+(define PROPAGATE (gensym))
 
 (define-syntax -contract-handler
   (syntax-parser
@@ -191,7 +174,7 @@
            (with-contract-continuation-mark mark
              (match eff-val
                [?p ?v0 ...] ...
-               [_ (values #f propagate)])))
+               [_ (values #f PROPAGATE)])))
          (contract-handler user-handler))]))
 
 (define (install-contract-handler user-handler proc)
@@ -202,7 +185,7 @@
           [(list)
            (raise-user-error 'contract-handler "no values returned")]
           [(list _ ... next-handler)
-           #:when (eq? propagate next-handler)
+           #:when (eq? PROPAGATE next-handler)
            (fallback eff-val kont user-handler fail)]
           [(list val ... next-handler)
            #:when (contract-handler? next-handler)
@@ -215,6 +198,24 @@
                              next-handler)])
         (fallback eff-val kont user-handler fail)))
   (call/prompt proc effect-prompt-tag handler))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; generic handler operations
+
+(define (install handler proc)
+  (if (contract-handler? handler)
+      (install-contract-handler handler proc)
+      (install-handler handler proc)))
+
+(define (wrap user-handler kont)
+  (cont-wrap (curry install user-handler) kont))
+
+(define (fallback eff-val original-kont user-handler fail)
+  (call/comp*
+   (effect-value-token eff-val) fail original-kont
+   (λ (kont)
+     (define kont* (cont-append kont (wrap user-handler original-kont)))
+     (abort/cc effect-prompt-tag kont* eff-val fail))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; utils
