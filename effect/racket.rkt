@@ -18,8 +18,8 @@
                      syntax/parse)
          racket/contract
          syntax/wrap-modbeg
-         "private/io.rkt"
-         "main.rkt")
+         "../effect-racket/private/io.rkt"
+         "../effect-racket/main.rkt")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; seal
@@ -84,12 +84,6 @@
   (for ([arg (in-list args)])
     (unless (void? arg)
       (println arg))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; reader
-
-(module reader syntax/module-reader
-  effect/racket)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require replacement
@@ -175,7 +169,7 @@
 
 (provide
  (all-from-out racket/contract)
- (all-from-out "main.rkt")
+ (all-from-out "../effect-racket/main.rkt")
  *
  +
  -

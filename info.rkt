@@ -3,7 +3,7 @@
 ;; General
 
 (define collection 'multi)
-(define pkg-desc "")
+(define pkg-desc "Effect handlers and contracts thereof.")
 (define version "0.0")
 (define pkg-authors '(camoy))
 

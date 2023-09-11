@@ -5,7 +5,7 @@
 
 @require[@for-label[racket/base
                     racket/contract
-                    effect]
+                    effect-racket]
          racket/sandbox
          scribble/example]
 
@@ -15,7 +15,7 @@
 @(define evaluator
    (make-base-eval
      '(require racket/contract
-               effect)))
+               effect-racket)))
 
 @;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 @;; document
@@ -23,7 +23,7 @@
 @title{Effect Racket}
 @author{Cameron Moy}
 
-@defmodule[effect]
+@defmodule[effect-racket]
 
 @margin-note{
   This package has not been officially released.
@@ -119,7 +119,7 @@ to take input from a list of strings,
 rather than standard in.
 
 @examples[#:eval evaluator #:hidden
-  (require effect/private/io)]
+  (require effect-racket/private/io)]
 
 @; Rather odd bug requires the language to be on the next line:
 @;   https://github.com/racket/scribble/issues/46

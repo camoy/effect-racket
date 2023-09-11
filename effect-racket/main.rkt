@@ -27,3 +27,9 @@
 
 (require "private/effect.rkt"
          "private/contract.rkt")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; reader
+
+(module reader syntax/module-reader
+  effect/racket/lang)
