@@ -8,7 +8,7 @@
          (rename-out [-handler handler]
                      [-contract-handler contract-handler])
          handler?
-         program-handler?
+         main-handler?
          contract-handler?
          continue
          continue*
@@ -30,6 +30,7 @@
          racket/contract
          racket/control
          racket/function
+         racket/list
          racket/match
          racket/struct
          racket/stxparam)
@@ -45,9 +46,10 @@
       (λ (self) (token-name (effect-value-token self)))
       (λ (self) (effect-value-args self))))])
 
-(struct handler (proc))
-(struct program-handler handler ())
-(struct contract-handler handler ())
+(struct handler ())
+(struct main-handler handler (proc))
+(struct contract-handler handler (proc))
+(struct append-handler handler (handlers))
 
 (define effect-prompt-tag
   (make-continuation-prompt-tag))
@@ -128,13 +130,9 @@
 
 (define-syntax with
   (syntax-parser
-    [(_ () ?body:expr ...)
-     #'(let () ?body ...)]
-    [(_ (?handler ?more ...) ?body:expr ...)
+    [(_ (?handler ...) ?body:expr ...)
      #:declare ?handler (expr/c #'handler? #:name "with handler")
-     #'(let ([handler ?handler.c]
-             [thk (λ () (with (?more ...) ?body ...))])
-         (install handler thk))]))
+     #'(install (handler-append ?handler.c ...) (λ () ?body ...))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `handler`
@@ -143,22 +141,22 @@
   (syntax-parser
     [(_ [?p:expr ?v:expr ...] ...)
      #'(let ()
-         (define (user-handler eff-val original-kont kont fail)
+         (define (handler-proc eff-val original-kont kont fail)
            (syntax-parameterize
              ([continue (make-rename-transformer #'kont)]
               [continue* (make-rename-transformer #'original-kont)])
              (match eff-val
                [?p ?v ...] ...
                [_ (fallback eff-val original-kont self fail)])))
-         (define self (program-handler user-handler))
+         (define self (main-handler handler-proc))
          self)]))
 
-(define (install-handler user-handler proc)
-  (match-define (handler handler-proc) user-handler)
+(define (install-main-handler handler proc)
+  (match-define (main-handler handler-proc) handler)
   (define (prompt-handler kont eff-val fail)
     (if (contract-mark kont)
-        (fallback eff-val kont user-handler fail)
-        (handler-proc eff-val kont (wrap user-handler kont) fail)))
+        (fallback eff-val kont handler fail)
+        (handler-proc eff-val kont (wrap handler kont) fail)))
   (call/prompt proc effect-prompt-tag prompt-handler))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -169,16 +167,15 @@
 (define-syntax -contract-handler
   (syntax-parser
     [(_ [?p:expr ?v0:expr ...] ...)
-     #'(let ()
-         (define (user-handler eff-val mark)
+     #'(contract-handler
+        (λ (eff-val mark)
            (with-contract-continuation-mark mark
              (match eff-val
                [?p ?v0 ...] ...
-               [_ (values #f PROPAGATE)])))
-         (contract-handler user-handler))]))
+               [_ (values #f PROPAGATE)]))))]))
 
-(define (install-contract-handler user-handler proc)
-  (match-define (handler handler-proc) user-handler)
+(define (install-contract-handler handler proc)
+  (match-define (contract-handler handler-proc) handler)
   (define (prompt-handler kont eff-val fail)
     (define mark (contract-mark kont))
     (if mark
@@ -187,7 +184,7 @@
            (raise-user-error 'contract-handler "no values returned")]
           [(list _ ... next-handler)
            #:when (eq? PROPAGATE next-handler)
-           (fallback eff-val kont user-handler fail)]
+           (fallback eff-val kont handler fail)]
           [(list val ... next-handler)
            #:when (contract-handler? next-handler)
            (install-contract-handler
@@ -197,25 +194,47 @@
            (raise-user-error 'contract-handler
                              "~a is not a contract handler"
                              next-handler)])
-        (fallback eff-val kont user-handler fail)))
+        (fallback eff-val kont handler fail)))
   (call/prompt proc effect-prompt-tag prompt-handler))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; `append-handler`
+
+(define (handler-append . handlers)
+  (define (f h)
+    (if (append-handler? h)
+        (append-handler-handlers h)
+        (list h)))
+  (append-handler (append-map f (reverse handlers))))
+
+(define (install-append-handler handler proc)
+  (match-define (append-handler handlers) handler)
+  (define f
+    (for/fold ([proc proc])
+              ([handler (in-list handlers)])
+      (λ () (install handler proc))))
+  (f))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; generic handler operations
 
 (define (install handler proc)
-  (if (contract-handler? handler)
-      (install-contract-handler handler proc)
-      (install-handler handler proc)))
+  (cond
+    [(main-handler? handler)
+     (install-main-handler handler proc)]
+    [(append-handler? handler)
+     (install-append-handler handler proc)]
+    [(contract-handler? handler)
+     (install-contract-handler handler proc)]))
 
-(define (wrap user-handler kont)
-  (cont-wrap (curry install user-handler) kont))
+(define (wrap handler kont)
+  (cont-wrap (curry install handler) kont))
 
-(define (fallback eff-val original-kont user-handler fail)
+(define (fallback eff-val original-kont handler fail)
   (call/comp*
    (effect-value-token eff-val) fail original-kont
    (λ (kont)
-     (define kont* (cont-append kont (wrap user-handler original-kont)))
+     (define kont* (cont-append kont (wrap handler original-kont)))
      (abort/cc effect-prompt-tag kont* eff-val fail))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -271,6 +290,11 @@
       [(print-str str)
        (set! str-buffer (cons str str-buffer))
        (continue (void))]))
+
+  (define handler-twice
+    (-handler
+     [(print-num num)
+      (continue (print-num (* 2 num)))]))
 
   (define handler-num
     (-handler
@@ -378,6 +402,25 @@
           (print-str "hi"))
    num-buffer  '(42)
    str-buffer  '("hi")
+   #:do (reset-buffers!)
+
+   ;; multiple handlers (order)
+   #:do (with (handler-num handler-twice)
+          (print-num 42))
+   #:do (with (handler-twice handler-num)
+          (print-num 42))
+   num-buffer  '(42 84)
+   #:do (reset-buffers!)
+
+   ;; append handlers (same `with`)
+   #:do (with ((handler-append handler-num handler-twice))
+          (print-num 42))
+   #:do (with ((handler-append handler-num handler-twice)
+               (handler-append handler-twice handler-twice))
+          (print-num 42))
+   #:do (with ((handler-append (handler-append handler-num handler-twice)))
+          (print-num 42))
+   num-buffer  '(84 336 84)
    #:do (reset-buffers!)
 
    ;; multiple return values
