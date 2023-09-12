@@ -266,29 +266,6 @@ unusable.
 
 @section{Contracts}
 
-@defproc[(contract-handler/c [handler handler?]) contract?]{
-  Returns a contract that protects functions
-  by installing the given contract handler
-  whenever that function is applied.
-
-  @examples[#:eval evaluator #:label #f
-    (effect id-callable? ())
-    (define no-id/c
-      (let ()
-        (define no-id-handler
-          (contract-handler
-            [(id-callable?) (values #f no-id-handler)]))
-        (contract-handler/c no-id-handler)))
-    (define/contract (do-it thk)
-      (-> no-id/c any)
-      (thk))
-    (define/contract (id x)
-      (->* (any/c) #:pre (id-callable?) any)
-      x)
-    (do-it (λ () (+ 1 1)))
-    (eval:error (do-it (λ () (id 1))))]
-}
-
 @defproc[(->e [eff contract?] [ret contract?]) contract?]{
   Returns a contract that protects functions
   by ensuring all effects performed when
@@ -303,4 +280,27 @@ unusable.
       (map f xs))
     (my-map (λ (x) (add1 x)) '(1 2 3))
     (eval:error (my-map (λ (x) (write x) x) '(1 2 3)))]
+}
+
+@defproc[(with/c [handler handler?]) contract?]{
+  Returns a contract that protects functions
+  by installing the given contract handler
+  whenever that function is applied.
+
+  @examples[#:eval evaluator #:label #f
+    (effect id-callable? ())
+    (define no-id/c
+      (let ()
+        (define no-id-handler
+          (contract-handler
+            [(id-callable?) (values #f no-id-handler)]))
+        (with/c no-id-handler)))
+    (define/contract (do-it thk)
+      (-> no-id/c any)
+      (thk))
+    (define/contract (id x)
+      (->* (any/c) #:pre (id-callable?) any)
+      x)
+    (do-it (λ () (+ 1 1)))
+    (eval:error (do-it (λ () (id 1))))]
 }

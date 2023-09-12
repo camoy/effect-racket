@@ -19,7 +19,7 @@
   (define h
     (contract-handler
      [(allowed? (== x)) (values #f h)]))
-  (contract-handler/c h))
+  (with/c h))
 
 (define (=> dom/c cod/c)
   (self/c
@@ -50,7 +50,7 @@
         #:post/desc
         (or (called? x)
             (format "did not call ~a" (object-name x))))
-   (contract-handler/c (h (set)))))
+   (with/c (h (set)))))
 
 (define (~> dom/c cod/c)
   (self/c

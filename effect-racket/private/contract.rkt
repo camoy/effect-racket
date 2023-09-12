@@ -5,8 +5,8 @@
 
 (require racket/contract)
 (provide
- contract-handler/c
- ->e)
+ ->e
+ with/c)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
@@ -17,29 +17,6 @@
          racket/match
          racket/unsafe/ops
          "effect.rkt")
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; `contract-handler/c`
-
-(struct contract-handler/c (handler)
-  #:property prop:chaperone-contract
-  (build-chaperone-contract-property
-   #:name
-   (λ (self) '(contract-handler/c ???))
-   #:late-neg-projection
-   (λ (self)
-     (match-define (contract-handler/c handler) self)
-     (λ (blm)
-       (λ (proc neg)
-         (unsafe-chaperone-procedure
-          proc
-          (make-keyword-procedure
-           (λ (kws kw-args . args)
-             (with (handler)
-               (keyword-apply proc kws kw-args args)))
-           (λ args
-             (with (handler)
-               (apply proc args))))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `->e`
@@ -88,6 +65,29 @@
                (apply proc args))))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; `with/c`
+
+(struct with/c (handler)
+  #:property prop:chaperone-contract
+  (build-chaperone-contract-property
+   #:name
+   (λ (self) '(with/c ???))
+   #:late-neg-projection
+   (λ (self)
+     (match-define (with/c handler) self)
+     (λ (blm)
+       (λ (proc neg)
+         (unsafe-chaperone-procedure
+          proc
+          (make-keyword-procedure
+           (λ (kws kw-args . args)
+             (with (handler)
+               (keyword-apply proc kws kw-args args)))
+           (λ args
+             (with (handler)
+               (apply proc args))))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; tests
 
 (module+ test
@@ -102,7 +102,7 @@
       (values val (generating-handler val))]))
 
   (define generator/c
-    (-> (contract-handler/c (generating-handler #t))
+    (-> (with/c (generating-handler #t))
         void?))
 
   (define yield/c
@@ -113,7 +113,7 @@
          [result any/c]))
 
   (chk
-   ;; `contract-handler/c`
+   ;; `with/c`
    #:do (define/contract (generator f)
           generator/c
           (f)

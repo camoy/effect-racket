@@ -26,7 +26,7 @@
 
 (define sort/c
   (and/c
-   (contract-handler/c
+   (with/c
     sorting-service)
    (->* (list? comparator/c)
         #:pre/desc

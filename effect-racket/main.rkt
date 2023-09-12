@@ -19,7 +19,7 @@
 
  ;; `contract.rkt`
  (contract-out
-  [contract-handler/c (-> contract-handler? any)]
+  [with/c (-> contract-handler? any)]
   [->e (-> contract? contract? any)]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
