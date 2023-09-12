@@ -45,8 +45,7 @@
       (λ (self) (token-name (effect-value-token self)))
       (λ (self) (effect-value-args self))))])
 
-(struct handler (proc)
-  #:property prop:procedure 0)
+(struct handler (proc))
 (struct program-handler handler ())
 (struct contract-handler handler ())
 
@@ -155,11 +154,12 @@
          self)]))
 
 (define (install-handler user-handler proc)
-  (define (handler kont eff-val fail)
+  (match-define (handler handler-proc) user-handler)
+  (define (prompt-handler kont eff-val fail)
     (if (contract-mark kont)
         (fallback eff-val kont user-handler fail)
-        (user-handler eff-val kont (wrap user-handler kont) fail)))
-  (call/prompt proc effect-prompt-tag handler))
+        (handler-proc eff-val kont (wrap user-handler kont) fail)))
+  (call/prompt proc effect-prompt-tag prompt-handler))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `contract-handler`
@@ -178,10 +178,11 @@
          (contract-handler user-handler))]))
 
 (define (install-contract-handler user-handler proc)
-  (define (handler kont eff-val fail)
+  (match-define (handler handler-proc) user-handler)
+  (define (prompt-handler kont eff-val fail)
     (define mark (contract-mark kont))
     (if mark
-        (match (call-with-values (λ () (user-handler eff-val mark)) list)
+        (match (call-with-values (λ () (handler-proc eff-val mark)) list)
           [(list)
            (raise-user-error 'contract-handler "no values returned")]
           [(list _ ... next-handler)
@@ -197,7 +198,7 @@
                              "~a is not a contract handler"
                              next-handler)])
         (fallback eff-val kont user-handler fail)))
-  (call/prompt proc effect-prompt-tag handler))
+  (call/prompt proc effect-prompt-tag prompt-handler))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; generic handler operations
