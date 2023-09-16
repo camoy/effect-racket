@@ -1,0 +1,17 @@
+on: [push, pull_request]
+name: build
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3.1.0
+      - name: Install Guix
+        uses: PromyLOPh/guix-install-action@v1
+      - name: Install dependencies
+        run: guix install -m effect-racket/manifest.scm
+      - name: Installing effect-racket and its dependencies
+        run: raco pkg install --no-docs --auto --name effect-racket
+      - name: Compiling effect-racket and building its docs
+        run: raco setup --check-pkg-deps --unused-pkg-deps effect-racket
+      - name: Testing effect-racket
+        run: raco test -x -p effect-racket
