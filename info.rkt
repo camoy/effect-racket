@@ -6,6 +6,7 @@
 (define pkg-desc "Effect handlers and contracts thereof.")
 (define version "0.0")
 (define pkg-authors '(camoy))
+(define test-omit-paths '("manifest.scm"))
 
 ;; Dependencies
 

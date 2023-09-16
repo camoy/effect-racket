@@ -242,6 +242,23 @@ unusable.
     (f 1)))]
 }
 
+@defproc[(handler-append [v handler?] ...) handler?]{
+  Appends the given handlers.
+
+  @examples[#:eval evaluator #:label #f
+    (effect go (x))
+    (define twice-service
+      (handler
+        [(go x) (continue (go (* x 2)))]))
+    (define decr-service
+      (handler
+        [(go x) (continue (sub1 x))]))
+    (define twice-then-decr-service
+      (handler-append decr-service twice-service))
+    (with (twice-then-decr-service)
+      (go 10))]
+}
+
 @defproc[(handler? [v any/c]) boolean?]{
   Returns if @racket[v] is a handler
   (either an ordinary handler or a contract handler).
@@ -282,7 +299,7 @@ unusable.
     (eval:error (my-map (λ (x) (write x) x) '(1 2 3)))]
 }
 
-@defproc[(with/c [handler handler?]) contract?]{
+@defproc[(with/c [handler handler?] ...) contract?]{
   Returns a contract that protects functions
   by installing the given contract handler
   whenever that function is applied.

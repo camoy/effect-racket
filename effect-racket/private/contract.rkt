@@ -67,14 +67,17 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `with/c`
 
-(struct with/c (handler)
+(define (with/c . handlers)
+  (with/c-contract (apply handler-append handlers)))
+
+(struct with/c-contract (handler)
   #:property prop:chaperone-contract
   (build-chaperone-contract-property
    #:name
    (λ (self) '(with/c ???))
    #:late-neg-projection
    (λ (self)
-     (match-define (with/c handler) self)
+     (match-define (with/c-contract handler) self)
      (λ (blm)
        (λ (proc neg)
          (unsafe-chaperone-procedure

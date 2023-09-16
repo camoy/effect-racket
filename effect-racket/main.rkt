@@ -8,7 +8,8 @@
  ;; `effect.rkt`
  (contract-out
   [handler? predicate/c]
-  [effect-value? predicate/c])
+  [effect-value? predicate/c]
+  [handler-append (-> handler? ... handler?)])
 
  effect
  handler
@@ -19,8 +20,8 @@
 
  ;; `contract.rkt`
  (contract-out
-  [with/c (-> contract-handler? any)]
-  [->e (-> contract? contract? any)]))
+  [with/c (-> contract-handler? ... contract?)]
+  [->e (-> contract? contract? contract?)]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require

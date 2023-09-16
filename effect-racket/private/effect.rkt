@@ -7,9 +7,11 @@
          (struct-out effect-value)
          (rename-out [-handler handler]
                      [-contract-handler contract-handler])
+         handler-append
          handler?
          main-handler?
          contract-handler?
+         append-handler?
          continue
          continue*
          with
