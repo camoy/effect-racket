@@ -71,6 +71,10 @@
 (define-syntax #%mb
   (make-wrapping-module-begin #'with-kernel-service))
 
+(define-syntax (#%top-interaction stx)
+  (syntax-parse stx
+    [(_ . ?e) #'(with-kernel-service ?e)]))
+
 (define kernel-service
   io-service)
 
