@@ -91,7 +91,7 @@ $ raco test effect-racket-test
   @item{
     Section 7.1 describes a series of minimal examples that cover the kinds
     of contracts other systems can express. These examples are included in
-    the @exec{effect-racket/examples} directory. Take a look at some (or all)
+    the @exec{effect-racket-test/examples} directory. Take a look at some (or all)
     of these examples and make sure they make sense and correspond to the
     description included in the paper.
   }
