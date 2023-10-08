@@ -6,18 +6,7 @@
 @require[@for-label[racket/base
                     racket/contract
 		    racket/match
-                    effect-racket]
-         racket/sandbox
-         scribble/example]
-
-@;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-@;; example evaluator
-
-@(define evaluator
-   (make-base-eval
-     '(require racket/contract
-               racket/match
-               effect-racket)))
+                    effect-racket]]
 
 @;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 @;; URLS
@@ -108,8 +97,8 @@ $ raco test effect-racket-test
   }
 
   @item{
-    See the @other-doc[EFFECT-DOCS] documentation and check
-    that it is sufficient to use the library. If you feel comfortable, try
-    out the library on your own examples!
+    See the @hyperlink["effect-racket.html"]{Effect Racket documentation} and
+    check that it is sufficient to use the library. If you feel comfortable,
+    try out the library on your own examples!
   }
 ]
