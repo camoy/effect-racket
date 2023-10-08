@@ -12,6 +12,6 @@ jobs:
           version: 'current'
       - run: raco pkg install effect-racket-doc/ \
                               effect-racket-lib/ \
-			      effect-racket-test \
-			      --auto --no-setup --skip-installed
+                              effect-racket-test \
+                              --auto --no-setup --skip-installed
       - run: raco test --drdr effect-racket-test/
