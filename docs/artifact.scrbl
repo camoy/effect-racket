@@ -94,7 +94,7 @@ $ raco test effect-racket-test
     of contracts other systems can express. These examples are included in
     the @exec{effect-racket-test/examples} directory. Take a look at some (or all)
     of these examples and make sure they make sense and correspond to the
-    description included in the paper.
+    descriptions included in the paper.
   }
 
   @item{
