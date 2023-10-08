@@ -69,7 +69,8 @@ $ raco test effect-racket-test
     @verbatim{
 $ git clone https://github.com/camoy/effect-racket
 $ cd effect-racket
-$ raco pkg install effect-racket-test/ effect-racket-lib/    # don't omit the trailing slashes
+$ # Don't omit the trailing slashes!
+$ raco pkg install --auto effect-racket-test/ effect-racket-lib/
     }
   }
 
