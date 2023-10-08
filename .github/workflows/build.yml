@@ -10,7 +10,5 @@ jobs:
           architecture: 'x64'
           distribution: 'full'
           version: 'current'
-      - run: raco pkg install --auto effect-racket-doc/ \
-                                     effect-racket-lib/ \
-                                     effect-racket-test
+      - run: raco pkg install --auto effect-racket-doc/ effect-racket-lib/ effect-racket-test/
       - run: raco test --drdr effect-racket-test/
