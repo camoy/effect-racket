@@ -3,7 +3,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
 
-(require "../main.rkt"
+(require effect-racket
          racket/contract
          racket/function
          racket/match)
@@ -13,12 +13,7 @@
 
 (effect sorting? ())
 
-(define comparator/c
-  (->* (any/c any/c)
-       #:pre/desc
-       (or (sorting? #:fail #f)
-           "cannot call outside of sort")
-       boolean?))
+(define comparator/c (-> any/c any/c boolean?))
 
 (define sorting-service
   (contract-handler
@@ -26,8 +21,7 @@
 
 (define sort/c
   (and/c
-   (with/c
-    sorting-service)
+   (with/c sorting-service)
    (->* (list? comparator/c)
         #:pre/desc
         (or (not (sorting? #:fail #f))
@@ -57,14 +51,6 @@
                 (list pivot)
                 (qsort lt? (filter (negate lt?-pivot) xt)))]))))
 
-(define escaped #f)
-(define bad-sort
-  (invariant-assertion
-   sort/c
-   (λ (xs lt?)
-     (set! escaped lt?)
-     xs)))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; tests
 
@@ -78,8 +64,4 @@
    #:x
    (qsort '(3 2 1) <)
    "not re-entrant"
-
-   #:do (bad-sort '(3 2 1) <)
-   #:x (escaped 1 2)
-   "cannot call outside of sort"
    ))

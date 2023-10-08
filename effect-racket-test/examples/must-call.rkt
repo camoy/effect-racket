@@ -3,39 +3,13 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
 
-(require "../main.rkt"
-         contract-etc
+(require contract-etc
+         effect-racket
          racket/contract
-         racket/function
-         racket/match
          racket/set)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; prohibit
-
-(effect allowed? (proc))
-
-(define (prohibit/c x)
-  (define h
-    (contract-handler
-     [(allowed? (== x)) (values #f h)]))
-  (with/c h))
-
-(define (=> dom/c cod/c)
-  (self/c
-   (λ (this)
-     (->* (dom/c)
-          #:pre/desc
-          (or (allowed? this #:fail (const #t))
-              (format "cannot call ~a" (object-name this)))
-          cod/c))))
-
-(define/contract (id x)
-  (=> any/c any/c)
-  x)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ensure
+;; must call
 
 (effect called? (proc))
 (effect call! (proc))
@@ -70,16 +44,6 @@
   (require chk)
 
   (chk
-   #:do (define/contract (no-id thk)
-          (-> (prohibit/c id) any)
-          (thk))
-
-   (no-id (λ () (+ 1 1)))
-   2
-
-   #:x (no-id (λ () (id 1)))
-   "cannot call id"
-
    #:do (define/contract (must-id thk)
           (-> (ensure/c another-id) any)
           (thk))

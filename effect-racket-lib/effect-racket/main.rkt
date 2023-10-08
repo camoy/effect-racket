@@ -19,9 +19,10 @@
  with
 
  ;; `contract.rkt`
+ dependent->e
  (contract-out
-  [with/c (-> contract-handler? ... contract?)]
-  [->e (-> contract? contract? contract?)]))
+  [->e (-> contract? contract? contract?)]
+  [with/c (-> contract-handler? ... contract?)]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require

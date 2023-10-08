@@ -3,8 +3,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; require
 
-(require "../main.rkt"
-         "../private/box.rkt"
+(require effect-racket
+         effect-racket/private/box
          racket/contract
          racket/match)
 

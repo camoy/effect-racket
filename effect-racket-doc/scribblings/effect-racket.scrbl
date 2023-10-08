@@ -5,6 +5,7 @@
 
 @require[@for-label[racket/base
                     racket/contract
+		    racket/match
                     effect-racket]
          racket/sandbox
          scribble/example]
@@ -15,6 +16,7 @@
 @(define evaluator
    (make-base-eval
      '(require racket/contract
+               racket/match
                effect-racket)))
 
 @;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -266,12 +268,12 @@ unusable.
 
 @defproc[(continue [v any/c] ...) any]{
   Bound to the deep delimited continuation
-  in the arms of @racket[handle].
+  in the arms of @racket[with].
 }
 
 @defproc[(continue* [v any/c] ...) any]{
   Bound to the shallow delimited continuation
-  in the arms of @racket[handle].
+  in the arms of @racket[with].
 }
 
 @defform[(with (handler ...) body ...+)]{
@@ -297,6 +299,23 @@ unusable.
       (map f xs))
     (my-map (λ (x) (add1 x)) '(1 2 3))
     (eval:error (my-map (λ (x) (write x) x) '(1 2 3)))]
+}
+
+@defproc[(dependent->e [eff contract?] [make-ret (-> effect-value? contract?)]) contract?]{
+  A dependent variant of @racket[->e]
+  where the continuation contract
+  relies on the effect value.
+
+  @examples[#:eval evaluator #:label #f
+    (effect id (v))
+    (define/contract (f)
+      (dependent->e id? (match-lambda [(id v) (=/c v)]))
+      (id 42))
+    (with ((handler [(id v) (continue v)]))
+      (f))
+    (eval:error
+      (with ((handler [(id v) (continue 0)]))
+        (f)))]
 }
 
 @defproc[(with/c [handler handler?] ...) contract?]{
