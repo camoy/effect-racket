@@ -1,0 +1,17 @@
+on: [push, pull_request]
+name: build
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: Bogdanp/setup-racket@v1.7
+        with:
+          architecture: 'x64'
+          distribution: 'full'
+          version: 'current'
+      - run: raco pkg install effect-racket-doc/ \
+                              effect-racket-lib/ \
+			      effect-racket-test \
+			      --auto --no-setup --skip-installed
+      - run: raco test --drdr effect-racket-test/
