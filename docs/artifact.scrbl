@@ -70,7 +70,7 @@ $ raco test effect-racket-test
 $ git clone https://github.com/camoy/effect-racket
 $ cd effect-racket
 $ # Don't omit the trailing slashes!
-$ raco pkg install --auto effect-racket-test/ effect-racket-lib/
+$ raco pkg install --auto effect-racket-doc/ effect-racket-lib/ effect-racket-test/
     }
   }
 
