@@ -31,7 +31,7 @@ This repository is organized into several separate packages.
   has miscellaneous files that, for example, build
   the artifact Docker image.
 
-[build-badge]: https://github.com/camoy/effect-racket/workflows/build/badge.svg
-[build]: https://github.com/camoy/effect-racket/actions?query=workflow%3Abuild
+[build-badge]: https://github.com/camoy/effect-racket/actions/workflows/build.yml/badge.svg
+[build]: https://github.com/camoy/effect-racket/actions/workflows/build.yml?query=workflow%3Abuild
 [docs-badge]: https://img.shields.io/badge/Docs-Scribble-blue.svg
 [docs]: https://camoy.github.io/effect-racket
