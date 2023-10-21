@@ -240,22 +240,23 @@
   (cont-wrap (curry install handler) kont))
 
 (define (fallback eff-val original-kont handler fail)
+  (define original-kont* (wrap handler original-kont))
   (call/comp*
-   (effect-value-token eff-val) fail original-kont
+   (effect-value-token eff-val) fail original-kont*
    (λ (kont)
-     (define kont* (cont-append kont (wrap handler original-kont)))
+     (define kont* (cont-append kont original-kont*))
      (abort/cc effect-prompt-tag kont* eff-val fail))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; utils
 
-(define (call/comp* token fail kont proc)
+(define (call/comp* token fail original-kont proc)
   (define fail* (if (procedure? fail) fail (const fail)))
   (cond
     [(continuation-prompt-available? effect-prompt-tag)
      (call/comp (λ (kont) (proc kont)) effect-prompt-tag)]
     [(eq? fail ABSENT) (error (token-name token) "no corresponding handler")]
-    [kont (call-in-continuation kont fail*)]
+    [original-kont (call-in-continuation original-kont fail*)]
     [else (fail*)]))
 
 (define (contract-mark kont)

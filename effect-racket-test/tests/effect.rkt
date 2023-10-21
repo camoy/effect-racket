@@ -177,6 +177,13 @@
    (+ 1 (print-num 0 #:fail 41)))
  42
 
+ ;; failure reinstall
+ (with (handler-str)
+   (print-num 0 #:fail 41)
+   (print-str "hi")
+   (+ 1 2))
+ 3
+
  ;; contract handler
  #:do (define/contract (login x)
         (-> (λ (x) (authorized)) any)
