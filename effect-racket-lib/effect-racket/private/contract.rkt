@@ -71,7 +71,10 @@
            (with-contract-continuation-mark
              (cons from-blm neg)
              (from-lnp+blm res neg)))
-         (define h (handler [eff (continue (perform* eff))]))
+         (define h
+           (handler
+            [(return results ...) (apply values results)]
+            [eff (continue (perform* eff))]))
          (unsafe-chaperone-procedure
           proc
           (make-keyword-procedure

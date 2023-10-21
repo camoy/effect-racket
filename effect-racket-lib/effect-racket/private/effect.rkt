@@ -15,6 +15,8 @@
          continue
          continue*
          with
+         return
+         return?
          effect
          effect-value?
          perform)
@@ -124,6 +126,11 @@
      (abort/cc effect-prompt-tag kont eff-val fail))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; `return`
+
+(effect return results)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `continue`
 
 (define-syntax-parameter continue
@@ -156,6 +163,7 @@
               [continue* (make-rename-transformer #'original-kont)])
              (match eff-val
                [?p ?v ...] ...
+               [(return results (... ...)) (apply values results)]
                [_ (fallback eff-val original-kont self fail)])))
          (define self (main-handler handler-proc))
          self)]))
@@ -166,7 +174,9 @@
     (if (contract-mark kont)
         (fallback eff-val kont handler fail)
         (handler-proc eff-val kont (wrap handler kont) fail)))
-  (call/prompt proc effect-prompt-tag prompt-handler))
+  (call/prompt (λ () (call-with-values proc return))
+               effect-prompt-tag
+               prompt-handler))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `contract-handler`
@@ -240,12 +250,15 @@
   (cont-wrap (curry install handler) kont))
 
 (define (fallback eff-val original-kont handler fail)
-  (define original-kont* (wrap handler original-kont))
-  (call/comp*
-   (effect-value-token eff-val) fail original-kont*
-   (λ (kont)
-     (define kont* (cont-append kont original-kont*))
-     (abort/cc effect-prompt-tag kont* eff-val fail))))
+  (match eff-val
+    [(return results ...) (apply values results)]
+    [_
+     (define original-kont* (wrap handler original-kont))
+     (call/comp*
+      (effect-value-token eff-val) fail original-kont*
+      (λ (kont)
+        (define kont* (cont-append kont original-kont*))
+        (abort/cc effect-prompt-tag kont* eff-val fail)))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; utils
