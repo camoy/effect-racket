@@ -23,7 +23,10 @@
 ;; require
 
 (require (for-syntax racket/base
+                     racket/bool
                      racket/format
+                     racket/function
+                     racket/list
                      racket/match
                      racket/syntax
                      syntax/parse
@@ -63,10 +66,12 @@
 
 (define-syntax effect
   (syntax-parser
-    [(_ ?name:id (?param:id ...))
+    [(_ ?name:id (~or (?param:id ...) ?var-arg:id))
      #:with ?predicate (format-id #'?name "~a?" #'?name)
      #:with ?token (syntax-local-lift-expression #`(token '?name))
-     #:do [(define arity (length (syntax-e #'(?param ...))))]
+     #:do [(define arity
+             (and (attribute ?param)
+                  (length (syntax-e #'(?param ...)))))]
      #:with ?performer
      (syntax-local-lift-expression #`(make-performer '?name ?token #,arity))
      #:declare ?performer
@@ -83,16 +88,16 @@
 
 (begin-for-syntax
   (define (performer-contract arity)
-    (define doms
-      (for/list ([_ (in-range arity)])
-        #'any/c))
-    #`(->* #,doms (#:fail failure-result/c) any))
+    (if arity
+        (let ([doms (map (const #'any/c) (range arity))])
+          #`(->* #,doms (#:fail failure-result/c) any))
+        #'procedure?))
 
   (define (make-match-transformer token arity)
     (syntax-parser
       [(_ ?p ...)
        #:do [(define pat-arity (length (syntax-e #'(?p ...))))]
-       #:fail-unless (= pat-arity arity) (arity-error arity)
+       #:fail-unless (implies arity (= pat-arity arity)) (arity-error arity)
        #`(effect-value (== #,token) (list ?p ...))]))
 
   (define (arity-error arity)
@@ -106,7 +111,9 @@
   (define (performer #:fail [fail ABSENT] . args)
     (perform (effect-value token args) fail))
   (procedure-rename
-   (procedure-reduce-keyword-arity performer arity null '(#:fail))
+   (if arity
+       (procedure-reduce-keyword-arity performer arity null '(#:fail))
+       performer)
    name))
 
 (define (perform eff-val [fail ABSENT])

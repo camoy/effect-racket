@@ -63,6 +63,8 @@
    [(authorized)
     (values auth? (handler-auth auth?))]))
 
+(effect stuff args)
+
 (chk
  ;; single handler
  #:do (with (handler-str)
@@ -155,6 +157,15 @@
  (with (handler-multi)
    (print-num 42))
  (values 1 2)
+
+ ;; varargs
+ #:do (define vararg-handler
+        (handler
+         [(stuff xs ...)
+          (continue (foldl + 0 xs))]))
+ (with (vararg-handler)
+   (stuff 1 2 3))
+ 6
 
  ;; failure
  (with (handler-str)
