@@ -42,7 +42,7 @@ manual installation if you want to use your own development environment.
   @item{
     Download, import, and run the Docker image:
     @verbatim{
-$ wget ccs.neu.edu/~camoy/artifact/effect-racket-artifact.tar.gz
+$ wget https://zenodo.org/records/10151333/files/effect-racket-artifact.tar.gz
 $ docker load --input effect-racket-artifact.tar.gz
 $ docker run -ti effect-racket-artifact
 $ cd effect-racket
