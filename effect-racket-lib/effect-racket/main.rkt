@@ -18,6 +18,7 @@
  continue*
  return
  with
+ splicing-with
 
  ;; `contract.rkt`
  dependent->e

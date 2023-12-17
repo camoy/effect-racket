@@ -51,6 +51,12 @@
    [(print-num num)
     (continue 1 2)]))
 
+(define (handler-incr state)
+  (handler
+   [(increment)
+    (with ((handler-incr (add1 state)))
+      (continue* state))]))
+
 (define (reset-buffers!)
   (set! err-buffer #f)
   (set! str-buffer null)
@@ -193,6 +199,17 @@
    (+ 1 2))
  3
 
+ ;; splicing
+ (let ()
+   (define res #f)
+   (splicing-with ((handler-incr 0))
+     (define a 10)
+     (increment)
+     (set! res (increment))
+     (define b 20))
+   (list res a b))
+ '(1 10 20)
+
  ;; contract handler
  #:do (define/contract (login x)
         (-> (λ (x) (authorized)) any)
@@ -233,6 +250,14 @@
    (lim 1)
    (lim 1))
  1
+
+ (let ()
+   (splicing-with ((increment-service 0))
+     (lim 1)
+     (define a 10)
+     (lim 1))
+   a)
+ 10
 
  #:x
  (with ((increment-service 0))

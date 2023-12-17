@@ -14,6 +14,7 @@
          append-handler?
          continue
          continue*
+         splicing-with
          with
          return
          return?
@@ -32,13 +33,15 @@
                      racket/match
                      racket/syntax
                      syntax/parse
-                     syntax/transformer)
+                     syntax/transformer
+                     syntax/kerncase)
          racket/bool
          racket/contract
          racket/control
          racket/function
          racket/list
          racket/match
+         racket/splicing
          racket/struct
          racket/stxparam)
 
@@ -144,11 +147,77 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `with`
 
+(define handler-param (make-parameter #f))
+
 (define-syntax with
   (syntax-parser
     [(_ (?handler ...) ?body:expr ...)
      #:declare ?handler (expr/c #'handler? #:name "with handler")
      #'(install (handler-append ?handler.c ...) (λ () ?body ...))]))
+
+;; Adapted from `splicing-parameterize` in `racket/splicing`
+(define-syntax (splicing-with stx)
+  (syntax-case stx ()
+    [(_ (handler ...) body ...)
+     (with-syntax ([(handler/checked ...)
+                    (for/list ([handler-stx (in-list (syntax->list #'(handler ...)))])
+                      #`(let ([handler-val #,handler-stx])
+                          (unless (handler? handler-val)
+                            (raise-argument-error 'splicing-with "handler?" handler-val))
+                          handler-val))])
+       (if (eq? (syntax-local-context) 'expression)
+           #'(with (handler/checked ...)
+               body ...)
+           (let ([introduce (let ([ctx (syntax-local-make-definition-context)])
+                              (λ (stx)
+                                (internal-definition-context-add-scopes ctx stx)))])
+             (with-syntax ([scopeless-id (datum->syntax #f 'scopeless-id)]
+                           [scoped-id (introduce (datum->syntax #f 'scoped-id))]
+                           [(scoped-body ...) (map introduce (syntax->list #'(body ...)))]
+                           [(free-handler-expr ...)
+                            (case (syntax-local-context)
+                              [(top-level module) #'((handler-param #f))]
+                              [else #'()])])
+               #'(begin
+                   (splicing-parameterize ([handler-param (list handler/checked ...)])
+                     (splicing-with-body
+                       scopeless-id scoped-id handler-param scoped-body) ...)
+                   free-handler-expr ...)))))]))
+
+(define-syntax (splicing-with-body stx)
+  (syntax-case stx ()
+    [(_ scopeless-id scoped-id handler-param body)
+     (let* ([introducer (make-syntax-delta-introducer #'scoped-id #'scopeless-id)]
+            [unintro (λ (stx) (introducer stx 'remove))]
+            [expanded-body (local-expand #'body (syntax-local-context)
+                                         (kernel-form-identifier-list))])
+       (kernel-syntax-case expanded-body #f
+         [(begin new-body ...)
+          (syntax/loc expanded-body
+            (begin
+              (splicing-with-body scopeless-id scoped-id handler-param new-body)
+              ...))]
+         [(define-values ids rhs)
+          (quasisyntax/loc expanded-body
+            (define-values #,(map (maybe unintro) (syntax->list #'ids))
+              (install handler-param (λ () (parameterize ([handler-param #f]) rhs)))))]
+         [(define-syntaxes ids rhs)
+          (quasisyntax/loc expanded-body
+            (define-syntaxes #,(map (maybe unintro) (syntax->list #'ids)) rhs))]
+         [(begin-for-syntax . _) expanded-body]
+         [(module . _) (unintro expanded-body)]
+         [(module* . _) expanded-body]
+         [(#%require . _) (unintro expanded-body)]
+         [(#%provide . _) expanded-body]
+         [(#%declare . _) expanded-body]
+         [expr
+          (syntax/loc expanded-body
+            (install handler-param (λ () (parameterize ([handler-param #f]) expr))))]))]))
+
+(define-for-syntax ((maybe unintro) form)
+  (if (syntax-property form 'definition-intended-as-local)
+      form
+      (unintro form)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `handler`
@@ -161,10 +230,13 @@
            (syntax-parameterize
              ([continue (make-rename-transformer #'kont)]
               [continue* (make-rename-transformer #'original-kont)])
-             (match eff-val
-               [?p ?v ...] ...
-               [(return results (... ...)) (apply values results)]
-               [_ (fallback eff-val original-kont self fail)])))
+             (begin0
+               (match eff-val
+                 [?p ?v ...] ...
+                 [(return results (... ...)) (apply values results)]
+                 [_ (fallback eff-val original-kont self fail)])
+               (when (handler-param)
+                 (handler-param (cons self (handler-param)))))))
          (define self (main-handler handler-proc))
          self)]))
 
@@ -214,7 +286,13 @@
                              "~a is not a contract handler"
                              next-handler)])
         (fallback eff-val kont handler fail)))
-  (call/prompt proc effect-prompt-tag prompt-handler))
+  (call/prompt (λ ()
+                 (begin0
+                   (proc)
+                   (when (handler-param)
+                     (handler-param (cons handler (handler-param))))))
+               effect-prompt-tag
+               prompt-handler))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `append-handler`
@@ -244,7 +322,11 @@
     [(append-handler? handler)
      (install-append-handler handler proc)]
     [(contract-handler? handler)
-     (install-contract-handler handler proc)]))
+     (install-contract-handler handler proc)]
+    [(parameter? handler)
+     (define appended-handlers (apply handler-append (handler)))
+     (handler null)
+     (install appended-handlers proc)]))
 
 (define (wrap handler kont)
   (cont-wrap (curry install handler) kont))

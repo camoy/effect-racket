@@ -283,6 +283,11 @@ unusable.
   nested in the given order.
 }
 
+@defform[(splicing-with (handler ...) body ...+)]{
+  Variant of @racket[with] that splices forms
+  into the enclosing definition context (similar to @racket[begin]).
+}
+
 @section{Contracts}
 
 @defproc[(->e [eff contract?] [ret contract?]) contract?]{
