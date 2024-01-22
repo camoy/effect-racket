@@ -5,13 +5,8 @@
 
 ## Install
 
-The package is not available from the Racket package server
-and must be installed from this repository:
-
 ```
-$ git clone https://github.com/camoy/effect-racket
-$ cd effect-racket
-$ raco pkg install --auto effect-racket-doc/ effect-racket-lib/ effect-racket-test/
+$ raco pkg install effect-racket
 ```
 
 ## Organization
@@ -34,4 +29,4 @@ This repository is organized into several separate packages.
 [build-badge]: https://github.com/camoy/effect-racket/actions/workflows/build.yml/badge.svg
 [build]: https://github.com/camoy/effect-racket/actions/workflows/build.yml?query=workflow%3Abuild
 [docs-badge]: https://img.shields.io/badge/Docs-Scribble-blue.svg
-[docs]: https://camoy.github.io/effect-racket
+[docs]: https://docs.racket-lang.org/effect-racket
