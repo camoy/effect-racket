@@ -182,6 +182,10 @@
    (values (stuff 1) (stuff 2)))
  3
 
+ ;; return (default)
+ (with () (+ 1 (return 10)))
+ 10
+
  ;; failure
  (with (handler-str)
    (+ 1 (print-num 0 #:fail (λ () 41))))

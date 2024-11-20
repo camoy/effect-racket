@@ -188,6 +188,38 @@ unusable.
   These are the values that handlers match on.
 }
 
+@defform[(return val ...)]{
+  Once the body expression evaluates to a sequence of values,
+  they are implicitly handed to the built-in @racket[return]
+  effect. Here is a definition of the @racket[amb] operator:
+
+  @examples[#:eval evaluator #:no-result
+  (effect choice ())
+  (effect fail ())
+
+  (define amb-service
+    (handler
+     [(choice) (append (continue #t) (continue #f))]
+     [(fail) '()]
+     [(return v) (list v)]))]
+
+  So that the @racket[append] works uniformly, @racket[return]
+  is used to inject values from pure expressions into a list.
+  It can be used as such:
+
+  @examples[#:eval evaluator #:label #f
+  (with (amb-service)
+    (define a (choice))
+    (define b (choice))
+    (if (and a b) (fail) (cons a b)))]
+
+  This effect can also be invoked directly, for early return behavior.
+
+  @examples[#:eval evaluator #:label #f
+  (with ()
+    (+ 1 (return 10)))]
+}
+
 @section{Handlers}
 
 @defform[(handler [pat body ...+] ...)]{

@@ -35,7 +35,6 @@
                      syntax/parse
                      syntax/transformer
                      syntax/kerncase)
-         racket/bool
          racket/contract
          racket/control
          racket/function
@@ -153,7 +152,8 @@
   (syntax-parser
     [(_ (?handler ...) ?body:expr ...)
      #:declare ?handler (expr/c #'handler? #:name "with handler")
-     #'(install (handler-append ?handler.c ...) (λ () ?body ...))]))
+     #'(install (handler-append ?handler.c ... default-handler)
+                (λ () ?body ...))]))
 
 ;; Adapted from `splicing-parameterize` in `racket/splicing`
 (define-syntax (splicing-with stx)
@@ -249,6 +249,8 @@
   (call/prompt (λ () (call-with-values proc return))
                effect-prompt-tag
                prompt-handler))
+
+(define default-handler (-handler))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; `contract-handler`
